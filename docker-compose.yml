@@ -1,0 +1,26 @@
+# Infraestructura base de la prueba tecnica.
+# Trae solo la base de datos: los servicios de backend y frontend los agregas tu,
+# de modo que un `docker compose up` sobre un clon limpio levante todo el sistema.
+services:
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: conciliacion
+      POSTGRES_USER: conciliacion
+      POSTGRES_PASSWORD: conciliacion
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Los CSV generados quedan visibles dentro del contenedor en /seed,
+      # por si prefieres cargarlos desde el lado del servidor.
+      - ./seed/out:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U conciliacion -d conciliacion"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:

@@ -1,0 +1,22 @@
+# Java
+target/
+build/
+*.class
+.gradle/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Entorno
+.env
+.env.*
+!.env.example
+
+# Editores
+.idea/
+.vscode/
+*.iml
+.DS_Store
