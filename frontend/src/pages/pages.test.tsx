@@ -59,8 +59,8 @@ describe('BatchPage', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>(() => {}))
     renderWithStore(<BatchPage />)
 
-    fireEvent.click(screen.getByLabelText('Pegar JSON'))
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: '{"loteId":"L-1","origen":"TESORERIA","pagos":[]}' } })
+    const csv = new File(['referencia;numero_factura;valor;fecha_pago\n'], 'lote.csv', { type: 'text/csv' })
+    fireEvent.change(screen.getByLabelText('Archivo CSV de Tesoreria'), { target: { files: [csv] } })
     const button = screen.getByRole('button', { name: 'Procesar lote' })
     fireEvent.click(button)
     fireEvent.click(button)

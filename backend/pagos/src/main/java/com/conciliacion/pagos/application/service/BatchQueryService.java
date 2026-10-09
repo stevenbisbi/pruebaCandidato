@@ -1,17 +1,16 @@
 package com.conciliacion.pagos.application.service;
 
-import com.conciliacion.pagos.application.port.out.BatchRepository;
-import com.conciliacion.pagos.application.port.out.PaymentLedger;
-import com.conciliacion.pagos.application.query.BatchSummary;
-import com.conciliacion.pagos.application.query.LinePage;
-import com.conciliacion.pagos.domain.model.LineOutcome;
-import com.conciliacion.pagos.domain.model.LineResult;
-import com.conciliacion.pagos.domain.model.RejectionReason;
+import com.conciliacion.pagos.application.usecase.GetBatchResultUseCase;
+import com.conciliacion.pagos.application.usecase.NotFoundException;
+import com.conciliacion.pagos.domain.model.Batch;
+import com.conciliacion.pagos.domain.model.LinePage;
+import com.conciliacion.pagos.domain.repository.BatchRepository;
+import com.conciliacion.pagos.domain.repository.PaymentLedger;
+import org.springframework.stereotype.Service;
 
-import java.util.function.Consumer;
-
-/** Consulta y descarga del resultado de un lote ya procesado (RF-22). */
-public class BatchQueryService {
+/** Consultar el resultado de un lote ya procesado (RF-21, RF-22). */
+@Service
+public class BatchQueryService implements GetBatchResultUseCase {
 
     private static final int MAX_PAGE_SIZE = 500;
 
@@ -23,18 +22,20 @@ public class BatchQueryService {
         this.ledger = ledger;
     }
 
-    public BatchSummary summary(String batchId) {
-        return batches.findSummary(batchId).orElseThrow(() -> new NotFoundException("No existe el lote " + batchId));
+    @Override
+    public Batch getBatch(String batchId) {
+        Batch batch = batches.find(batchId);
+        if (batch == null) {
+            throw new NotFoundException("No existe el lote " + batchId);
+        }
+        return batch;
     }
 
-    public LinePage lines(String batchId, LineOutcome outcome, RejectionReason reason, int page, int size) {
-        summary(batchId);
-        int boundedSize = Math.clamp(size, 1, MAX_PAGE_SIZE);
-        return ledger.findLines(batchId, outcome, reason, Math.max(page, 0), boundedSize);
-    }
-
-    public void export(String batchId, Consumer<LineResult> consumer) {
-        summary(batchId);
-        ledger.streamLines(batchId, consumer);
+    @Override
+    public LinePage getLines(String batchId, int page, int size) {
+        getBatch(batchId);
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        return ledger.findLines(batchId, safePage, safeSize);
     }
 }

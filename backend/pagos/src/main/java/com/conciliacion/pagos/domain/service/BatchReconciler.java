@@ -14,92 +14,108 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
- * Aplica las lineas de un lote contra las facturas, en el orden del lote (RF-18).
+ * Regla de negocio principal: decide, linea por linea, si un pago se aplica o se rechaza.
  *
- * No toca persistencia: recibe las facturas ya bloqueadas y las referencias ya aplicadas, y
- * devuelve el resultado linea por linea. Las facturas recibidas quedan mutadas con el saldo final.
+ * Las lineas se recorren en el orden del lote (RF-18): si dos pagos van a la misma factura, el
+ * segundo ve el saldo que dejo el primero. Las facturas distintas no se afectan entre si (RF-19).
  *
- * Sobre RF-19: las lineas de facturas distintas son independientes entre si, de modo que su orden
- * relativo no cambia el resultado. Para lineas de una misma factura manda RF-18 (ver DECISIONS.md).
+ * No usa base de datos: recibe las facturas ya cargadas y devuelve el resultado de cada linea.
  */
-public final class BatchReconciler {
+public class BatchReconciler {
 
-    /** RF-10: Tesoreria envia pesos enteros. Se admite solo digitos, sin signo ni decimales. */
-    private static final Pattern WHOLE_PESOS = Pattern.compile("\\d{1,16}");
     private static final int MAX_REFERENCE_LENGTH = 80;
     private static final int MAX_INVOICE_LENGTH = 30;
 
+    /**
+     * @param invoices facturas del lote, por numero (las que no existen no estan en el mapa)
+     * @param alreadyAppliedReferences referencias que ya se aplicaron en lotes anteriores
+     */
     public List<LineResult> reconcile(List<BatchLine> lines, Map<String, Invoice> invoices,
                                       Set<String> alreadyAppliedReferences) {
         Set<String> usedReferences = new HashSet<>(alreadyAppliedReferences);
-        List<LineResult> results = new ArrayList<>(lines.size());
+        List<LineResult> results = new ArrayList<>();
         for (BatchLine line : lines) {
-            results.add(process(line, invoices, usedReferences));
+            results.add(processLine(line, invoices, usedReferences));
         }
         return results;
     }
 
-    private LineResult process(BatchLine line, Map<String, Invoice> invoices, Set<String> usedReferences) {
-        if (line.formatError() != null || isBlank(line.reference()) || isBlank(line.invoiceNumber())) {
-            String detail = line.formatError() != null ? line.formatError() : "Referencia o factura vacia";
-            return rejected(line, null, null, RejectionReason.FORMATO_INVALIDO, detail, null);
+    private LineResult processLine(BatchLine line, Map<String, Invoice> invoices, Set<String> usedReferences) {
+        // 1. La linea debe tener sus 4 columnas, referencia y numero de factura.
+        if (line.formatError() != null) {
+            return rejected(line, RejectionReason.FORMATO_INVALIDO, line.formatError(), null, null, null);
+        }
+        if (isBlank(line.reference()) || isBlank(line.invoiceNumber())) {
+            return rejected(line, RejectionReason.FORMATO_INVALIDO, "Referencia o factura vacia", null, null, null);
         }
         if (line.reference().length() > MAX_REFERENCE_LENGTH || line.invoiceNumber().length() > MAX_INVOICE_LENGTH) {
-            return rejected(line, null, null, RejectionReason.FORMATO_INVALIDO,
-                "Referencia o numero de factura demasiado largos", null);
+            return rejected(line, RejectionReason.FORMATO_INVALIDO, "Referencia o factura demasiado larga", null, null, null);
         }
+
+        Invoice invoice = invoices.get(line.invoiceNumber());
+
+        // 2. RF-10: el valor debe ser un entero positivo en pesos.
         BigDecimal amount = parseAmount(line.rawAmount());
         if (amount == null) {
-            return rejected(line, null, null, RejectionReason.VALOR_INVALIDO,
-                "Valor recibido: '" + nullToEmpty(line.rawAmount()) + "'", invoices.get(line.invoiceNumber()));
+            return rejected(line, RejectionReason.VALOR_INVALIDO, "Valor recibido: '" + line.rawAmount() + "'", null, null, invoice);
         }
+
+        // 3. La fecha debe traer zona horaria, por ejemplo 2026-03-15T23:30:00-05:00.
         OffsetDateTime paidAt = parseDate(line.rawPaidAt());
         if (paidAt == null) {
-            return rejected(line, amount, null, RejectionReason.FECHA_INVALIDA,
-                "Fecha recibida: '" + nullToEmpty(line.rawPaidAt()) + "'", invoices.get(line.invoiceNumber()));
+            return rejected(line, RejectionReason.FECHA_INVALIDA, "Fecha recibida: '" + line.rawPaidAt() + "'", amount, null, invoice);
         }
-        Invoice invoice = invoices.get(line.invoiceNumber());
+
+        // 4. RF-12: una referencia no se aplica dos veces.
         if (usedReferences.contains(line.reference())) {
-            return rejected(line, amount, paidAt, RejectionReason.REFERENCIA_DUPLICADA, null, invoice);
+            return rejected(line, RejectionReason.REFERENCIA_DUPLICADA, null, amount, paidAt, invoice);
         }
+
+        // 5. RF-08: la factura debe existir.
         if (invoice == null) {
-            return rejected(line, amount, paidAt, RejectionReason.FACTURA_INEXISTENTE, null, null);
+            return rejected(line, RejectionReason.FACTURA_INEXISTENTE, null, amount, paidAt, null);
         }
+
+        // 6. RF-09: el pago debe caber completo en el saldo; si no, se rechaza entero.
         if (!invoice.accepts(amount)) {
-            return rejected(line, amount, paidAt, RejectionReason.EXCEDE_SALDO,
-                "Saldo disponible: " + invoice.balance().toPlainString(), invoice);
+            return rejected(line, RejectionReason.EXCEDE_SALDO, "Saldo disponible: " + invoice.balance(), amount, paidAt, invoice);
         }
-        BigDecimal before = invoice.balance();
+
+        // 7. Todo bien: se aplica el pago.
+        BigDecimal balanceBefore = invoice.balance();
         invoice.apply(amount, paidAt.toInstant());
         usedReferences.add(line.reference());
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
-            LineOutcome.APLICADO, null, null, before, invoice.balance(), invoice.status());
+            LineOutcome.APLICADO, null, null, balanceBefore, invoice.balance(), invoice.status());
     }
 
-    private static LineResult rejected(BatchLine line, BigDecimal amount, OffsetDateTime paidAt,
-                                       RejectionReason reason, String detail, Invoice invoice) {
-        BigDecimal balance = invoice == null ? null : invoice.balance();
+    /** Un rechazo no cambia la factura (RF-11): saldo anterior y posterior son iguales. */
+    private LineResult rejected(BatchLine line, RejectionReason reason, String detail, BigDecimal amount,
+                                OffsetDateTime paidAt, Invoice invoice) {
+        BigDecimal balance = null;
+        if (invoice != null) {
+            balance = invoice.balance();
+        }
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
             LineOutcome.RECHAZADO, reason, detail, balance, balance, invoice == null ? null : invoice.status());
     }
 
-    private static BigDecimal parseAmount(String raw) {
-        if (raw == null) {
+    /** Devuelve el valor como BigDecimal, o null si no es un entero positivo de hasta 16 digitos. */
+    private BigDecimal parseAmount(String raw) {
+        if (raw == null || !raw.trim().matches("\\d{1,16}")) {
             return null;
         }
-        String value = raw.trim();
-        if (!WHOLE_PESOS.matcher(value).matches()) {
+        BigDecimal amount = new BigDecimal(raw.trim()).setScale(Invoice.MONEY_SCALE);
+        if (amount.signum() <= 0) {
             return null;
         }
-        BigDecimal amount = new BigDecimal(value).setScale(Invoice.MONEY_SCALE);
-        return amount.signum() > 0 ? amount : null;
+        return amount;
     }
 
-    /** Se exige offset explicito: una fecha sin zona es ambigua justo en la frontera de RF-13. */
-    private static OffsetDateTime parseDate(String raw) {
+    /** Devuelve la fecha, o null si falta o no trae zona horaria. */
+    private OffsetDateTime parseDate(String raw) {
         if (isBlank(raw)) {
             return null;
         }
@@ -110,11 +126,7 @@ public final class BatchReconciler {
         }
     }
 
-    private static boolean isBlank(String value) {
+    private boolean isBlank(String value) {
         return value == null || value.isBlank();
-    }
-
-    private static String nullToEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

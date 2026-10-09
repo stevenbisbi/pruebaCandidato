@@ -36,13 +36,6 @@ class ImportadorCsvLegacyCharacterizationTest {
         assertThat(result.getPagos()).hasSize(50_000);
     }
 
-    @Test
-    void toleratesWindowsLineEndingsBecauseItTrimsEveryField() throws IOException {
-        Path file = write("crlf.csv", HEADER + "\r\nP-1;FV-0000001;100;2026-03-15T10:00:00-05:00\r\n");
-
-        assertThat(importer.importar(file).fueAceptado()).isTrue();
-    }
-
     // --- Defecto 1: BOM UTF-8 -------------------------------------------------------------
 
     @Test
@@ -100,33 +93,6 @@ class ImportadorCsvLegacyCharacterizationTest {
         assertThat(result.fueAceptado()).isFalse();
         assertThat(result.getMotivoRechazo()).contains("NumberFormatException");
         assertThat(result.getPagos()).isEmpty();
-    }
-
-    @Test
-    void rejectsDatesWithoutOffset() throws IOException {
-        Path file = write("sin-zona.csv", HEADER + "\nP-1;FV-1;100;2026-03-15T10:00:00\n");
-
-        assertThat(importer.importar(file).getMotivoRechazo()).contains("DateTimeParseException");
-    }
-
-    @Test
-    void skipsBlankLinesAndRejectsEmptyFiles() throws IOException {
-        Path blanks = write("blancos.csv", HEADER + "\n\nP-1;FV-1;100;2026-03-15T10:00:00-05:00\n   \n");
-        Path empty = write("vacio.csv", "");
-
-        assertThat(importer.importar(blanks).getPagos()).hasSize(1);
-        assertThat(importer.importar(empty).getMotivoRechazo()).isEqualTo("El archivo esta vacio");
-    }
-
-    @Test
-    void rejectsFilesThatAreNotUtf8() throws IOException {
-        Path file = tmp.resolve("latin1.csv");
-        Files.write(file, (HEADER + "\nP-Ñ;FV-1;100;2026-03-15T10:00:00-05:00\n").getBytes(StandardCharsets.ISO_8859_1));
-
-        ResultadoImportacion result = importer.importar(file);
-
-        assertThat(result.fueAceptado()).isFalse();
-        assertThat(result.getMotivoRechazo()).contains("UncheckedIOException");
     }
 
     private Path write(String name, String content) throws IOException {

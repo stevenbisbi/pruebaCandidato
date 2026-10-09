@@ -1,122 +1,146 @@
 package com.conciliacion.pagos.application.service;
 
-import com.conciliacion.pagos.application.port.out.BatchRepository;
-import com.conciliacion.pagos.application.port.out.InvoiceRepository;
-import com.conciliacion.pagos.application.port.out.PaymentLedger;
-import com.conciliacion.pagos.application.port.out.TransactionRunner;
-import com.conciliacion.pagos.application.query.BatchHeader;
-import com.conciliacion.pagos.application.query.BatchReceipt;
-import com.conciliacion.pagos.application.query.BatchTotals;
-import com.conciliacion.pagos.application.query.IncomingBatch;
+import com.conciliacion.pagos.application.dto.BatchReceipt;
+import com.conciliacion.pagos.application.dto.IncomingBatch;
+import com.conciliacion.pagos.application.usecase.BatchConflictException;
+import com.conciliacion.pagos.application.usecase.ProcessBatchUseCase;
+import com.conciliacion.pagos.domain.model.Batch;
 import com.conciliacion.pagos.domain.model.BatchLine;
 import com.conciliacion.pagos.domain.model.Invoice;
 import com.conciliacion.pagos.domain.model.LineResult;
+import com.conciliacion.pagos.domain.repository.BatchRepository;
+import com.conciliacion.pagos.domain.repository.InvoiceRepository;
+import com.conciliacion.pagos.domain.repository.PaymentLedger;
 import com.conciliacion.pagos.domain.service.BatchReconciler;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
-import java.util.TreeSet;
 
 /**
- * Caso de uso: recibir y aplicar un lote (RF-16 a RF-21).
+ * Caso de uso principal: recibir un lote y aplicar sus pagos (RF-16 a RF-21).
  *
- * Todo ocurre en una sola transaccion: registro del lote, bloqueo de facturas, aplicacion,
- * auditoria y totales. Si algo falla no queda nada a medias, y un reenvio posterior procesa el lote
- * desde cero.
+ * Todo el metodo corre en una sola transaccion (@Transactional): si algo falla a mitad de camino
+ * no queda nada aplicado, y el reenvio de Tesoreria procesa el lote desde cero.
  */
-public class ProcessBatchService {
+@Service
+public class ProcessBatchService implements ProcessBatchUseCase {
 
     private final BatchRepository batches;
     private final InvoiceRepository invoices;
     private final PaymentLedger ledger;
-    private final TransactionRunner tx;
-    private final Clock clock;
     private final String user;
     private final BatchReconciler reconciler = new BatchReconciler();
 
     public ProcessBatchService(BatchRepository batches, InvoiceRepository invoices, PaymentLedger ledger,
-                               TransactionRunner tx, Clock clock, String user) {
+                               @Value("${app.user}") String user) {
         this.batches = batches;
         this.invoices = invoices;
         this.ledger = ledger;
-        this.tx = tx;
-        this.clock = clock;
         this.user = user;
     }
 
-    public BatchReceipt process(IncomingBatch batch) {
-        if (batch.lines().isEmpty()) {
+    @Override
+    @Transactional
+    public BatchReceipt process(IncomingBatch incoming) {
+        List<BatchLine> lines = incoming.lines();
+        if (lines.isEmpty()) {
             throw new IllegalArgumentException("El lote no contiene lineas de pago");
         }
-        String hash = contentHash(batch.lines());
-        String batchId = isBlank(batch.id()) ? "CSV-" + hash.substring(0, 20) : batch.id().trim();
-        return tx.inTransaction(() -> processInTransaction(batchId, hash, batch));
-    }
 
-    private BatchReceipt processInTransaction(String batchId, String hash, IncomingBatch batch) {
-        Instant now = clock.instant();
-        BatchHeader header = new BatchHeader(batchId, batch.source(), batch.channel(), batch.generatedOn(), hash, now);
-        if (!batches.register(header)) {
-            // RF-20 / CF-03: reenvio. Se devuelve el resultado original sin volver a aplicar nada.
-            BatchHeader existing = batches.findHeader(batchId).orElseThrow();
+        // 1. Identificar el lote. El CSV no trae id: se usa la huella de su contenido.
+        String hash = contentHash(lines);
+        String batchId = incoming.id();
+        if (batchId == null || batchId.isBlank()) {
+            batchId = "CSV-" + hash.substring(0, 20);
+        }
+
+        // 2. Registrar el lote. Si ya existia, es un reenvio (RF-20, CF-03).
+        Instant now = Instant.now();
+        boolean isNew = batches.insert(batchId, incoming.source(), hash, now);
+        if (!isNew) {
+            Batch existing = batches.find(batchId);
             if (!existing.contentHash().equals(hash)) {
                 throw new BatchConflictException(batchId);
             }
-            return new BatchReceipt(batches.findSummary(batchId).orElseThrow(), true);
+            return new BatchReceipt(existing, true);
         }
 
-        Set<String> invoiceNumbers = new TreeSet<>();
-        Set<String> references = new TreeSet<>();
-        for (BatchLine line : batch.lines()) {
-            if (!isBlank(line.invoiceNumber())) {
+        // 3. Cargar y bloquear las facturas del lote, y ver que referencias ya se aplicaron antes.
+        List<String> invoiceNumbers = new ArrayList<>();
+        List<String> references = new ArrayList<>();
+        for (BatchLine line : lines) {
+            if (line.invoiceNumber() != null) {
                 invoiceNumbers.add(line.invoiceNumber());
             }
-            if (!isBlank(line.reference())) {
+            if (line.reference() != null) {
                 references.add(line.reference());
             }
         }
-        Map<String, Invoice> locked = invoices.lockByNumbers(invoiceNumbers);
-        Set<String> applied = ledger.findAppliedReferences(references);
+        Map<String, Invoice> lockedInvoices = invoices.lockByNumbers(invoiceNumbers);
+        Set<String> appliedReferences = ledger.findAppliedReferences(references);
 
-        List<LineResult> results = reconciler.reconcile(batch.lines(), locked, applied);
+        // 4. Aplicar los pagos linea por linea (la regla de negocio esta en BatchReconciler).
+        List<LineResult> results = reconciler.reconcile(lines, lockedInvoices, appliedReferences);
 
-        invoices.saveBalances(locked.values().stream().filter(Invoice::isChanged).toList());
+        // 5. Guardar saldos, resultado por linea y totales del lote.
+        List<Invoice> changedInvoices = new ArrayList<>();
+        for (Invoice invoice : lockedInvoices.values()) {
+            if (invoice.isChanged()) {
+                changedInvoices.add(invoice);
+            }
+        }
+        invoices.saveBalances(changedInvoices);
         ledger.record(batchId, results, user, now);
-        batches.complete(batchId, BatchTotals.of(results));
-        return new BatchReceipt(batches.findSummary(batchId).orElseThrow(), false);
+
+        Batch batch = withTotals(batchId, incoming.source(), hash, now, results);
+        batches.saveTotals(batch);
+        return new BatchReceipt(batch, false);
     }
 
-    /**
-     * Huella del contenido normalizado (sin BOM, sin espacios, sin fin de linea). Asi el mismo lote
-     * enviado como CSV desde Windows o desde Linux produce la misma huella.
-     */
-    static String contentHash(List<BatchLine> lines) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            for (BatchLine line : lines) {
-                String canonical = String.join(";", trim(line.reference()), trim(line.invoiceNumber()),
-                    trim(line.rawAmount()), trim(line.rawPaidAt()), Objects.toString(line.formatError(), "")) + "\n";
-                digest.update(canonical.getBytes(StandardCharsets.UTF_8));
+    private Batch withTotals(String batchId, String source, String hash, Instant receivedAt, List<LineResult> results) {
+        int applied = 0;
+        BigDecimal appliedAmount = new BigDecimal("0.00");
+        BigDecimal rejectedAmount = new BigDecimal("0.00");
+        for (LineResult result : results) {
+            BigDecimal amount = result.amount() == null ? BigDecimal.ZERO : result.amount();
+            if (result.isApplied()) {
+                applied++;
+                appliedAmount = appliedAmount.add(amount);
+            } else {
+                rejectedAmount = rejectedAmount.add(amount);
             }
-            return HexFormat.of().formatHex(digest.digest());
+        }
+        int rejected = results.size() - applied;
+        return new Batch(batchId, source, hash, receivedAt, results.size(), applied, rejected,
+            appliedAmount, rejectedAmount);
+    }
+
+    /** Huella SHA-256 del contenido: el mismo archivo siempre da la misma huella. */
+    static String contentHash(List<BatchLine> lines) {
+        StringBuilder text = new StringBuilder();
+        for (BatchLine line : lines) {
+            text.append(line.reference()).append(';')
+                .append(line.invoiceNumber()).append(';')
+                .append(line.rawAmount()).append(';')
+                .append(line.rawPaidAt()).append(';')
+                .append(line.formatError()).append('\n');
+        }
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.toString().getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
-    }
-
-    private static String trim(String value) {
-        return value == null ? "" : value.trim();
-    }
-
-    private static boolean isBlank(String value) {
-        return value == null || value.isBlank();
     }
 }

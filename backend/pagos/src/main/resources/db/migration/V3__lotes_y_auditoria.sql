@@ -36,15 +36,10 @@ CREATE TABLE payment_line_result (
 
 -- RF-12 garantizado por la base, no solo por el codigo: una referencia se aplica una sola vez.
 CREATE UNIQUE INDEX ux_line_applied_reference ON payment_line_result (reference) WHERE outcome = 'APLICADO';
-CREATE INDEX ix_line_invoice ON payment_line_result (invoice_number);
-CREATE INDEX ix_line_paid_at ON payment_line_result (paid_at);
-CREATE INDEX ix_line_batch_reason ON payment_line_result (batch_id, reason, line_number);
 
--- Indices de la consulta paginada (RF-23, PR-01). El orden (due_date, number) es inmutable y es
--- la llave de la paginacion por cursor (PR-03).
-CREATE INDEX ix_invoice_due ON invoice (due_date, number);
-CREATE INDEX ix_invoice_nit_due ON invoice (supplier_nit, due_date, number);
-CREATE INDEX ix_invoice_status_due ON invoice (status, due_date, number);
-CREATE INDEX ix_invoice_balance ON invoice (balance, due_date, number);
+-- Indices de la consulta de facturas (RF-23, PR-01). La paginacion avanza por numero de factura,
+-- que nunca cambia (PR-03): la llave primaria cubre el caso sin filtros.
+CREATE INDEX ix_invoice_nit_number ON invoice (supplier_nit, number);
+CREATE INDEX ix_invoice_status_number ON invoice (status, number);
 
 ANALYZE invoice;

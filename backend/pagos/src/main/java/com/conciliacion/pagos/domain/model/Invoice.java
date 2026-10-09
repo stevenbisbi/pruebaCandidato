@@ -5,7 +5,6 @@ import com.conciliacion.pagos.domain.service.DueDatePolicy;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.Objects;
 
 /**
  * Factura con su saldo. Es mutable a proposito: dentro de un lote varios pagos a la misma
@@ -25,11 +24,11 @@ public final class Invoice {
 
     public Invoice(String number, BigDecimal totalAmount, BigDecimal balance, LocalDate dueDate,
                    InvoiceStatus status) {
-        this.number = Objects.requireNonNull(number);
+        this.number = number;
         this.totalAmount = totalAmount.setScale(MONEY_SCALE);
         this.balance = balance.setScale(MONEY_SCALE);
-        this.dueDate = Objects.requireNonNull(dueDate);
-        this.status = Objects.requireNonNull(status);
+        this.dueDate = dueDate;
+        this.status = status;
     }
 
     /** RF-09: el pago se acepta solo si cabe completo en el saldo. */

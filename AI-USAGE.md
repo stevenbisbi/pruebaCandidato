@@ -12,8 +12,11 @@ Herramienta: Claude Code (modelo Claude Opus 5.5), en la aplicacion de escritori
   las lineas sin fecha en el de abril y de los pagos a facturas inexistentes en el lote de 50.000).
 - Backend: dominio, casos de uso, adaptadores JDBC y REST, migracion V3 y la carga de semilla V2.
 - Pruebas: caracterizacion del heredado, dominio, lector CSV e integracion con Testcontainers.
-- Frontend: las tres pantallas, el manejo de URL, el formato de montos y sus pruebas.
+- Frontend: las pantallas de facturas y de carga de lotes, el manejo de URL, el formato de montos y sus pruebas.
 - Dockerfiles, nginx, docker-compose y los documentos README, DECISIONS y LIMITACIONES.
+- La primera version incluia ademas tablero, descarga del resultado, detalle de factura, lote por
+  JSON, filtros por rango y filtro de rechazos por motivo; se
+  recortaron para dejar un alcance que se pueda explicar completo (ver LIMITACIONES.md).
 
 Partes que ya existian antes de usar el asistente: el proyecto Spring Boot inicial, el esquema
 `V1__schema.sql` (tablas `supplier` e `invoice` con sus restricciones) y el proyecto Vite con
@@ -36,7 +39,7 @@ Correcciones que surgieron al revisar y ejecutar lo generado durante la sesion:
   jsdom. Se cambio a happy-dom.
 - **Testcontainers no detectaba Docker 29.** Las pruebas de integracion se saltaban en silencio
   (`disabledWithoutDocker`), lo que habria dado un falso verde. Se fijo la version de la API de
-  docker-java y se confirmo que las 7 pruebas corren contra PostgreSQL real.
+  docker-java y se confirmo que las pruebas de integracion corren contra PostgreSQL real.
 - **Prueba de contexto por defecto.** `PagosApplicationTests` necesitaba una base levantada y
   fallaba sin ella; se reemplazo por la prueba de integracion con Testcontainers.
 

@@ -18,8 +18,3 @@ export function formatCop(value: string | null | undefined): string {
   const decimals = decimalPart.padEnd(2, '0')
   return `${sign}$ ${integer},${decimals}`
 }
-
-/** Valida un monto escrito por el usuario en un filtro: digitos con hasta dos decimales. */
-export function isDecimalInput(value: string): boolean {
-  return /^\d+(\.\d{1,2})?$/.test(value)
-}

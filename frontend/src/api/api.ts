@@ -1,73 +1,54 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react'
-import type { FetchBaseQueryError } from '@reduxjs/toolkit/query'
-import type { SerializedError } from '@reduxjs/toolkit'
-import type { ApiError, Batch, BatchLinePage, Dashboard, InvoiceDetail, InvoicePage } from './types'
+import type { Batch, BatchLinePage, InvoicePage } from './types'
 
+/**
+ * Llamadas al backend con RTK Query (Redux Toolkit). Cada endpoint genera un hook, por ejemplo
+ * useSearchInvoicesQuery, que devuelve { data, isFetching, error } y guarda el resultado en cache.
+ */
 export const api = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({ baseUrl: '/api/v1' }),
-  tagTypes: ['Invoices', 'Dashboard'],
+  tagTypes: ['Invoices'],
   endpoints: (build) => ({
+    // GET /facturas?nit=...&estado=...&cursor=...
     searchInvoices: build.query<InvoicePage, string>({
       query: (params) => `/facturas?${params}`,
       providesTags: ['Invoices'],
     }),
-    getInvoice: build.query<InvoiceDetail, string>({
-      query: (number) => `/facturas/${encodeURIComponent(number)}`,
-      providesTags: ['Invoices'],
-    }),
-    getDashboard: build.query<Dashboard, string>({
-      query: (params) => `/conciliacion/tablero?${params}`,
-      providesTags: ['Dashboard'],
-    }),
+    // GET /lotes/{id}
     getBatch: build.query<Batch, string>({
       query: (id) => `/lotes/${encodeURIComponent(id)}`,
     }),
-    getBatchLines: build.query<BatchLinePage, { id: string; params: string }>({
-      query: ({ id, params }) => `/lotes/${encodeURIComponent(id)}/lineas?${params}`,
+    // GET /lotes/{id}/lineas?pagina=...
+    getBatchLines: build.query<BatchLinePage, { id: string; page: number }>({
+      query: ({ id, page }) => `/lotes/${encodeURIComponent(id)}/lineas?pagina=${page}&tamano=100`,
     }),
-    submitJsonBatch: build.mutation<Batch, unknown>({
-      query: (body) => ({ url: '/lotes', method: 'POST', body }),
-      invalidatesTags: ['Invoices', 'Dashboard'],
-    }),
-    submitCsvBatch: build.mutation<Batch, File>({
+    // POST /lotes/archivo. Al terminar, las facturas en cache quedan viejas y se vuelven a pedir.
+    uploadCsv: build.mutation<Batch, File>({
       query: (file) => {
         const form = new FormData()
         form.append('archivo', file)
         return { url: '/lotes/archivo', method: 'POST', body: form }
       },
-      invalidatesTags: ['Invoices', 'Dashboard'],
+      invalidatesTags: ['Invoices'],
     }),
   }),
 })
 
-export const {
-  useSearchInvoicesQuery,
-  useGetInvoiceQuery,
-  useGetDashboardQuery,
-  useGetBatchQuery,
-  useGetBatchLinesQuery,
-  useSubmitJsonBatchMutation,
-  useSubmitCsvBatchMutation,
-} = api
+export const { useSearchInvoicesQuery, useGetBatchQuery, useGetBatchLinesQuery, useUploadCsvMutation } = api
 
-function isApiError(data: unknown): data is ApiError {
-  return typeof data === 'object' && data !== null && 'mensaje' in data
-}
-
-/** Mensaje legible para cualquier error de RTK Query. */
-export function errorMessage(error: FetchBaseQueryError | SerializedError | undefined): string {
+/** Convierte el error de una llamada en un texto para mostrar al usuario. */
+export function errorMessage(error: unknown): string {
   if (!error) {
     return ''
   }
-  if ('status' in error) {
-    if (isApiError(error.data)) {
-      return error.data.mensaje
-    }
-    if (error.status === 'FETCH_ERROR') {
-      return 'No fue posible conectar con el servidor.'
-    }
-    return `Error del servidor (${String(error.status)}).`
+  // El backend responde los errores como { codigo, mensaje }.
+  const e = error as { status?: unknown; data?: { mensaje?: string } }
+  if (e.data?.mensaje) {
+    return e.data.mensaje
   }
-  return error.message ?? 'Error inesperado.'
+  if (e.status === 'FETCH_ERROR') {
+    return 'No fue posible conectar con el servidor.'
+  }
+  return 'Ocurrio un error inesperado.'
 }
