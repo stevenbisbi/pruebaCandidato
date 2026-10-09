@@ -80,15 +80,21 @@ public class BatchReconciler {
 
         // 6. RF-09: el pago debe caber completo en el saldo; si no, se rechaza entero.
         if (!invoice.accepts(amount)) {
-            return rejected(line, RejectionReason.EXCEDE_SALDO, "Saldo disponible: " + invoice.balance(), amount, paidAt, invoice);
+            return rejected(line, RejectionReason.EXCEDE_SALDO, "Saldo a pagar: " + invoice.payableBalance(), amount, paidAt, invoice);
         }
 
         // 7. Todo bien: se aplica el pago.
         BigDecimal balanceBefore = invoice.balance();
         invoice.apply(amount, paidAt.toInstant());
         usedReferences.add(line.reference());
+
+        // Si el pago supero el saldo por centavos (porque el saldo se redondea al peso), queda anotado.
+        String detail = null;
+        if (amount.compareTo(balanceBefore) > 0) {
+            detail = "Centavos redondeados: " + amount.subtract(balanceBefore);
+        }
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
-            LineOutcome.APLICADO, null, null, balanceBefore, invoice.balance(), invoice.status());
+            LineOutcome.APLICADO, null, detail, balanceBefore, invoice.balance(), invoice.status());
     }
 
     /** Un rechazo no cambia la factura (RF-11): saldo anterior y posterior son iguales. */

@@ -3,6 +3,7 @@ package com.conciliacion.pagos.domain.model;
 import com.conciliacion.pagos.domain.service.DueDatePolicy;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -31,9 +32,17 @@ public final class Invoice {
         this.status = status;
     }
 
-    /** RF-09: el pago se acepta solo si cabe completo en el saldo. */
+    /**
+     * Saldo que se le puede cobrar a Tesoreria: el saldo redondeado hacia arriba al peso entero,
+     * porque Tesoreria paga sin centavos (RF-10). Ejemplo: 37.500.483,40 se cobra como 37.500.484.
+     */
+    public BigDecimal payableBalance() {
+        return balance.setScale(0, RoundingMode.CEILING).setScale(MONEY_SCALE);
+    }
+
+    /** RF-09: el pago se acepta solo si cabe completo en el saldo redondeado al peso. */
     public boolean accepts(BigDecimal amount) {
-        return amount.compareTo(balance) <= 0;
+        return amount.compareTo(payableBalance()) <= 0;
     }
 
     /** RF-07, RF-13, RF-14: descuenta el pago y recalcula el estado. */
@@ -45,6 +54,10 @@ public final class Invoice {
             throw new IllegalStateException("El pago excede el saldo de la factura " + number);
         }
         balance = balance.subtract(amount);
+        // Si el pago cubrio los centavos redondeados, el saldo quedaria negativo (maximo -0,99): queda en cero.
+        if (balance.signum() < 0) {
+            balance = BigDecimal.ZERO.setScale(MONEY_SCALE);
+        }
         status = InvoiceStatus.derive(totalAmount, balance, DueDatePolicy.isLate(dueDate, paidAt));
         changed = true;
     }

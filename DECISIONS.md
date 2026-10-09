@@ -12,12 +12,24 @@ que se procesan de forma independiente.
 **Descartado:** rechazar todos los pagos de una factura si su suma excede el saldo. Cumple RF-19,
 pero viola RF-18 y deja sin aplicar un pago de 60 que si cabia.
 
-### A-02. Facturas con centavos, pagos en pesos enteros (RF-04 vs RF-10) — CF-01
+### A-02. Facturas con centavos, pagos en pesos enteros (RF-04 vs RF-10) — CF-01 y CF-02
 
-Una factura de 37.500.483,40 nunca puede quedar en cero con pagos enteros.
-**Supuesto:** se aplica la regla tal cual: queda PARCIAL con saldo 0,40.
-**Descartado:** condonar residuos menores a un peso. Es una decision contable que debe tomar
-Cartera, no el sistema.
+Una factura de 37.500.483,40 nunca puede quedar en cero con pagos enteros: con 37.500.483 quedan
+0,40 y con 37.500.484 el pago excede el saldo y RF-09 obliga a rechazarlo.
+
+**Decision:** los centavos se redondean hacia arriba al peso siguiente. Para Tesoreria, la factura
+de 37.500.483,40 vale 37.500.484 (`Invoice.payableBalance()`).
+- CF-01: un pago de 37.500.483 se aplica y quedan 0,40; un pago posterior de 1 peso la cierra.
+- CF-02: un pago de 37.500.484 se aplica y la factura queda PAGADA con saldo 0. Los 0,60 que se
+  pagaron de mas por el redondeo quedan anotados en el detalle de la linea ("Centavos redondeados").
+- Un pago mayor al saldo redondeado (37.500.485) se sigue rechazando completo (RF-09).
+
+**Descartado 1:** aplicar RF-09 al pie de la letra. Ninguna factura con centavos podria quedar
+PAGADA nunca, porque Tesoreria no puede pagar centavos.
+**Descartado 2:** condonar el residuo (si quedan menos de 1 peso, dejar el saldo en 0). Regala
+plata al proveedor; con el redondeo hacia arriba, en cambio, la entidad recibe el valor completo.
+**Costo aceptado:** se cobran hasta 0,99 pesos de mas por factura, y CF-02 deja de rechazarse,
+lo que interpreta RF-09 sobre el saldo redondeado y no sobre el saldo exacto.
 
 ### A-03. Que fecha define el pago extemporaneo (RF-13) — CF-05
 
@@ -118,8 +130,8 @@ sobre una copia textual del modulo.
 
 | Caso | Resultado | Por que |
 |---|---|---|
-| CF-01 | Se aplica; queda PARCIAL con saldo 0,40. | A-02 |
-| CF-02 | Rechazado: excede el saldo por 0,60. | RF-09 |
+| CF-01 | Se aplica; queda PARCIAL con saldo 0,40. Un pago posterior de 1 peso la deja PAGADA. | A-02 |
+| CF-02 | Se aplica; queda PAGADA con saldo 0 (0,60 de redondeo anotados en la linea). | A-02 |
 | CF-03 | El segundo envio devuelve el resultado original; el saldo no cambia. | A-04, D-03 |
 | CF-04 | Se aplica uno de los dos pagos, nunca ambos. | D-02 |
 | CF-05 | PAGADA, no extemporanea. | A-03 |

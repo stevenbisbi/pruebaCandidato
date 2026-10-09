@@ -35,15 +35,40 @@ class BatchReconcilerTest {
     }
 
     @Test
-    void cf02_paymentExceedingTheBalanceByCentsIsRejectedEntirely() {
+    void cf01_aOnePesoPaymentClosesTheFortyCentsLeft() {
+        Invoice invoice = invoice("FV-0042199", "37500483.40", LocalDate.of(2026, 4, 30));
+
+        List<LineResult> results = reconciler.reconcile(List.of(
+            line(1, "CF01-1", "FV-0042199", "37500483", "2026-03-10T10:00:00-05:00"),
+            line(2, "CF01-2", "FV-0042199", "1", "2026-03-11T10:00:00-05:00")), map(invoice), Set.of());
+
+        assertThat(results.get(1).outcome()).isEqualTo(LineOutcome.APLICADO);
+        assertThat(results.get(1).detail()).isEqualTo("Centavos redondeados: 0.60");
+        assertThat(invoice.balance()).isEqualByComparingTo("0");
+        assertThat(invoice.status()).isEqualTo(InvoiceStatus.PAGADA);
+    }
+
+    @Test
+    void cf02_theCentsAreRoundedUpSoPayingTheNextPesoPaysTheInvoice() {
         Invoice invoice = invoice("FV-0042199", "37500483.40", LocalDate.of(2026, 4, 30));
 
         LineResult result = single(line("CF02-1", "FV-0042199", "37500484", "2026-03-10T10:00:00-05:00"), invoice);
 
+        assertThat(result.outcome()).isEqualTo(LineOutcome.APLICADO);
+        assertThat(result.detail()).isEqualTo("Centavos redondeados: 0.60");
+        assertThat(invoice.balance()).isEqualByComparingTo("0");
+        assertThat(invoice.status()).isEqualTo(InvoiceStatus.PAGADA);
+    }
+
+    @Test
+    void paymentAboveTheRoundedBalanceIsRejectedEntirely() {
+        Invoice invoice = invoice("FV-0042199", "37500483.40", LocalDate.of(2026, 4, 30));
+
+        LineResult result = single(line("P-1", "FV-0042199", "37500485", "2026-03-10T10:00:00-05:00"), invoice);
+
         assertThat(result.reason()).isEqualTo(RejectionReason.EXCEDE_SALDO);
         assertThat(invoice.balance()).isEqualByComparingTo("37500483.40");
         assertThat(invoice.status()).isEqualTo(InvoiceStatus.PENDIENTE);
-        assertThat(result.balanceBefore()).isEqualByComparingTo(result.balanceAfter());
     }
 
     @Test
