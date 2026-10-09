@@ -1,71 +1,97 @@
-# Repositorio semilla - Sistema de Conciliacion de Pagos
+# Sistema de Conciliacion de Pagos
 
-Punto de partida de la prueba tecnica. Trae la infraestructura y los datos; el codigo de
-aplicacion lo escribes tu.
+Recibe lotes de pago de Tesoreria (JSON o CSV), los aplica contra las facturas de proveedores,
+rechaza linea por linea lo que no cuadra y muestra el estado de la conciliacion.
 
-Lee primero el enunciado en Word. Este archivo solo explica que hay aca y como arrancar.
-
-## Que incluye
-
-| Ruta | Contenido |
-|---|---|
-| `docker-compose.yml` | PostgreSQL 16 con healthcheck. |
-| `seed/out/` | Los datos de prueba, ya generados. |
-| `legacy/` | El importador de CSV que hoy corre en produccion. Ver la seccion 8 del enunciado. |
-| `backend/` | Vacio. Tu backend va aca. |
-| `frontend/` | Vacio. Tu frontend va aca. |
-
-## Los datos
-
-Vienen listos en `seed/out/`. No hay que generarlos.
-
-| Archivo | Contenido |
-|---|---|
-| `facturas.csv` | 500.000 facturas sobre 8.000 proveedores. ~41 MB. |
-| `lote-50k.csv` | Lote de 50.000 lineas de pago, para el presupuesto PR-02. |
-| `lote-tesoreria-marzo.csv` | Archivo real entregado por Tesoreria. |
-| `lote-tesoreria-abril.csv` | Archivo real entregado por Tesoreria. |
-| `casos/cf-*.csv` | Los casos frontera publicados en el Anexo B del enunciado. |
-
-Son archivos de datos, no codigo: **versionalos junto con tu solucion.** La evaluacion parte de un
-clon limpio de tu repositorio, y el requisito 6.2 del enunciado dice que ese clon debe quedar
-operativo y con datos con un solo comando. Si prefieres no versionar los 41 MB, es una decision
-valida, pero entonces documenta en tu README como obtenerlos.
+- Decisiones, ambiguedades y casos frontera: [DECISIONS.md](DECISIONS.md)
+- Que quedo afuera y que esta mal: [LIMITACIONES.md](LIMITACIONES.md)
+- Uso de IA: [AI-USAGE.md](AI-USAGE.md)
 
 ## Puesta en marcha
 
-**Levantar la base:**
+Requisito unico: Docker (con Docker Compose v2).
 
 ```bash
-docker compose up -d db
+docker compose up
 ```
 
-Queda en `localhost:5432`, base `conciliacion`, usuario y clave `conciliacion`. El contenido de
-`seed/out/` queda montado dentro del contenedor en `/seed`.
+El primer arranque compila backend y frontend dentro de los contenedores y siembra las 500.000
+facturas (la migracion de semilla tarda alrededor de 1 a 2 minutos). Mientras el backend no termina
+de arrancar, el frontend responde, pero las consultas devuelven error 502. Arranques posteriores
+reutilizan el volumen `db-data` y son inmediatos.
 
-**El resto es tuyo.** El esquema de base de datos, la carga de los CSV, el backend y el
-frontend los disenas tu. Agrega los servicios que necesites a `docker-compose.yml`: al terminar,
-un `docker compose up` sobre un clon limpio debe dejar el sistema operativo y con datos.
+Para empezar de cero (borra la base): `docker compose down -v`.
 
-## Formato de los archivos
+| Servicio | Puerto | URL |
+|---|---|---|
+| Frontend (nginx) | 3000 | **http://localhost:3000** (URL de entrada) |
+| Backend (Spring Boot) | 8080 | http://localhost:8080/api/v1 |
+| PostgreSQL 16 | 5432 | base `conciliacion`, usuario y clave `conciliacion` |
 
-Facturas:
+El frontend hace de proxy de `/api` hacia el backend, asi que basta con el puerto 3000.
+
+## Como cargar datos
+
+- **Facturas**: se cargan solas en el primer arranque desde `seed/out/facturas.csv` (migracion
+  `db/seed/V2__carga_facturas.sql`, `COPY` del lado del servidor sobre el volumen `/seed`).
+- **Lotes**: desde la pantalla *Carga de lotes* (subir CSV o pegar JSON), o por API:
+
+```bash
+curl -F "archivo=@seed/out/lote-50k.csv" http://localhost:3000/api/v1/lotes/archivo
+```
+
+```bash
+curl -H "Content-Type: application/json" -d @lote.json http://localhost:3000/api/v1/lotes
+```
+
+Los casos del Anexo B estan en `seed/out/casos/`. Se pueden subir en orden desde la UI o con curl.
+
+## API
+
+| Metodo | Ruta | Descripcion |
+|---|---|---|
+| POST | `/api/v1/lotes` | Lote en JSON. 201 si se proceso ahora, 200 si es un reenvio, 409 si el id existe con otro contenido. |
+| POST | `/api/v1/lotes/archivo` | Lote CSV (multipart, campo `archivo`; opcionales `loteId`, `origen`). |
+| GET | `/api/v1/lotes/{id}` | Resumen del lote y rechazos por motivo. |
+| GET | `/api/v1/lotes/{id}/lineas` | Resultado linea por linea, paginado (`resultado`, `motivo`, `pagina`, `tamano`). |
+| GET | `/api/v1/lotes/{id}/resultado` | Descarga CSV del resultado linea por linea. |
+| GET | `/api/v1/facturas` | Consulta paginada por cursor (`nit`, `estado` repetible, `venceDesde`, `venceHasta`, `saldoMin`, `saldoMax`, `cursor`, `tamano`). |
+| GET | `/api/v1/facturas/{numero}` | Detalle de la factura y sus pagos (aplicados y rechazados). |
+| GET | `/api/v1/conciliacion/tablero` | Totales y top 10 de proveedores (`desde`, `hasta`). |
+
+Todos los montos viajan como texto decimal (`"37500483.40"`), nunca como numero JSON.
+
+## Pruebas
+
+Backend (JUnit 5; las de integracion usan Testcontainers y se omiten si no hay Docker):
+
+```bash
+cd backend/pagos && ./mvnw test
+```
+
+Frontend (Vitest + Testing Library):
+
+```bash
+cd frontend && npm ci && npm test
+```
+
+| Prueba | Que fija |
+|---|---|
+| `ImportadorCsvLegacyCharacterizationTest` | Comportamiento actual del importador heredado, defectos incluidos. |
+| `CsvBatchReaderTest` | Los mismos archivos con el lector que lo reemplaza. |
+| `BatchReconcilerTest` | CF-01, CF-02, CF-05, CF-06, frontera horaria, duplicados, lineas invalidas, RF-19. |
+| `BatchProcessingIntegrationTest` | CF-03, CF-04, reenvio concurrente, CF-08 (paginacion estable), indice unico. |
+| `money.test.ts` | Formato colombiano sin perdida de precision (incluye montos > 2^53). |
+| `pages.test.tsx` | Vista reconstruida desde la URL, estados vacio/error, doble clic (RF-27). |
+
+## Estructura
 
 ```
-numero;nit;razon_social;fecha_emision;fecha_vencimiento;valor_total
-FV-0000001;800000000-1;Suministros Andina S.A.S.;2026-01-15;2026-03-15;1250000.00
+backend/pagos/        Spring Boot 3.5, Java 21 (hexagonal)
+  domain/             Modelo y reglas. Sin Spring ni JDBC.
+  application/        Casos de uso y puertos (interfaces). Sin Spring.
+  infrastructure/     Adaptadores: JDBC, REST, CSV y el cableado de Spring.
+frontend/             React 18 + TypeScript + Vite 6 + Tailwind 3 + RTK Query
+legacy/               Importador heredado tal como se entrego (ver DECISIONS.md, D-10)
+seed/out/             Datos de prueba
 ```
-
-Pagos:
-
-```
-referencia;numero_factura;valor;fecha_pago
-P-000001;FV-0042199;37500483;2026-03-15T23:30:00-05:00
-```
-
-## Notas
-
-- El `docker-compose.yml` no fija zona horaria en ningun servicio: los contenedores corren en UTC,
-  como en el ambiente real descrito en la seccion 4 del enunciado.
-- No se entrega ningun esquema de base de datos. El modelo de datos lo disenas tu.
-- Puedes reorganizar la estructura de directorios si tu solucion lo pide. Solo documentalo.

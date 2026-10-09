@@ -1,6 +1,6 @@
-# Infraestructura base de la prueba tecnica.
-# Trae solo la base de datos: los servicios de backend y frontend los agregas tu,
-# de modo que un `docker compose up` sobre un clon limpio levante todo el sistema.
+# `docker compose up` levanta base de datos, backend (que siembra las 500.000 facturas con Flyway
+# en el primer arranque) y frontend. No se fija zona horaria: los contenedores corren en UTC, como
+# en produccion (seccion 4); el codigo usa America/Bogota de forma explicita donde importa.
 services:
 
   db:
@@ -13,14 +13,33 @@ services:
       - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
-      # Los CSV generados quedan visibles dentro del contenedor en /seed,
-      # por si prefieres cargarlos desde el lado del servidor.
+      # La migracion de semilla lee facturas.csv desde aqui con COPY del lado del servidor.
       - ./seed/out:/seed:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U conciliacion -d conciliacion"]
       interval: 5s
       timeout: 3s
       retries: 20
+
+  backend:
+    build: ./backend/pagos
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/conciliacion?reWriteBatchedInserts=true
+      DB_USER: conciliacion
+      DB_PASSWORD: conciliacion
+      SEED_DIR: /seed
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
 
 volumes:
   db-data:
