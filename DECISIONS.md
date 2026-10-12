@@ -3,18 +3,7 @@
 Cada decision sigue el mismo formato: que se decidio, que alternativa se descarto, que ganaba esa
 alternativa, que costaba y por que en este contexto no aplica.
 
-## 1. Preguntas formuladas durante la prueba
-
-**Pregunta (9/10/2026, 12:55 p.m.):** que hacer con los requisitos contradictorios; que hacer con
-los pagos con decimales si el sistema solo recibe pagos enteros; si hay alguna tolerancia o
-redondeo con los centavos; y por que RF-18 dice que importa el orden y RF-19 que no.
-
-**Respuesta del contacto (1:49 p.m.):** "redondee a los centavos".
-
-La respuesta cubre el tratamiento de los centavos (A-02). La contradiccion RF-18/RF-19 quedo sin
-respuesta y se resuelve con un supuesto propio (A-01).
-
-## 2. Ambiguedades del enunciado
+## 1. Ambiguedades del enunciado
 
 ### A-01. RF-18 contradice a RF-19 — CF-06
 
@@ -34,12 +23,10 @@ RF-19 al pie de la letra, pero viola RF-18 y deja sin aplicar un pago de 60 que 
 La factura tiene centavos (RF-04) y Tesoreria paga en pesos enteros (RF-10). Una factura de
 37.500.483,40 no puede quedar en cero con pagos enteros.
 
-**Interpretacion de la respuesta del contacto.** "Redondee a los centavos" admite dos lecturas:
-1. Redondear *a* centavos (dos decimales) y comparar exacto.
-2. Redondear *los* centavos al peso entero.
-
-Se adopta la lectura 2, redondeando al peso mas cercano (`RoundingMode.HALF_UP`): sin otra
-indicacion, "redondear" significa al valor mas cercano.
+**Interpretacion.** El contacto indico "redondee a los centavos". Se entiende como redondear los
+centavos al peso entero mas cercano (`RoundingMode.HALF_UP`): sin otra indicacion, "redondear"
+significa al valor mas cercano. La lectura literal, redondear a dos decimales, se descarta abajo
+(Descartado 1).
 
 **Decision:**
 - La factura **guarda** su valor con dos decimales (RF-04, RF-05). El redondeo no modifica datos
@@ -53,7 +40,7 @@ indicacion, "redondear" significa al valor mas cercano.
   valor original recibido y el valor aplicado. Si al redondear queda en 0, se rechaza por valor
   invalido.
 
-**Descartado 1:** redondear a dos decimales (lectura literal 1). Una factura con 0,40 de saldo no
+**Descartado 1:** redondear a dos decimales (lectura literal). Una factura con 0,40 de saldo no
 podria saldarse nunca: un pago de 1 peso excede el saldo y RF-09 obliga a rechazarlo. Quedaria
 PARCIAL para siempre.
 
@@ -147,7 +134,7 @@ El lote de abril trae tres lineas sin fecha.
 **Descartado:** rechazar el lote completo, como hace el importador heredado. Es justamente el
 defecto que reporta Cartera (seccion 8).
 
-## 3. Decisiones de arquitectura
+## 2. Decisiones de arquitectura
 
 ### D-01. Persistencia con JDBC en lugar de JPA
 
@@ -216,7 +203,7 @@ sin BOM y con todas las columnas llenas. Los de Tesoreria dependen de como se ex
 guardados con Excel llevan BOM, y si a un pago le falto la fecha queda el campo vacio. Por eso "a
 veces entra y a veces no" al reenviarlo.
 
-## 4. Casos frontera (Anexo B)
+## 3. Casos frontera (Anexo B)
 
 | Caso | Resultado esperado | Por que |
 |---|---|---|
