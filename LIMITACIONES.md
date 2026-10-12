@@ -7,13 +7,13 @@ concurrencia, zona horaria) y el modulo heredado. Lo siguiente se dejo fuera a p
 
 | Requisito | Por que |
 |---|---|
-| RF-17, lote por JSON | Solo se recibe el CSV. El JSON entraria por el mismo caso de uso (`ProcessBatchUseCase`): faltan el endpoint y su DTO, no logica de negocio. |
+| RF-17, lote por JSON | Solo se recibe el CSV. El JSON entraria por el mismo caso de uso (`ReconcileBatchUseCase`): faltan el endpoint y su DTO, no logica de negocio. |
 | RF-23, filtros por rango de vencimiento y de saldo | La consulta filtra por NIT y estado, con paginacion estable. Los rangos son condiciones extra en la misma consulta. |
 | RF-24 y RF-30, tablero de conciliacion | Es una consulta de lectura sobre datos que ya existen; no afecta la correccion de la conciliacion. |
 | RF-26, filtrar rechazos por motivo | El resultado se ve completo y paginado, con los rechazos resaltados en rojo y su motivo; falta el filtro. |
-| RF-26, avance del procesamiento | Se muestra un indicador de "procesando" con el tiempo transcurrido, no el avance linea a linea (ver D-01). |
-| RF-22, descarga del resultado | El resultado si se puede consultar en cualquier momento (`GET /lotes/{id}/lineas`); falta exportarlo a archivo. |
-| Paginacion de facturas | Solo "Primera" y "Siguiente"; sin total ni salto a una pagina (ver D-04). |
+| RF-26, avance del procesamiento | Se muestra un indicador de "procesando" con el tiempo transcurrido, no el avance linea a linea |
+| RF-22, descarga del resultado | El resultado si se puede consultar en cualquier momento (`GET /api/v1/batches/{id}/lines`); falta exportarlo a archivo. |
+| Paginacion de facturas | Solo "Primera" y "Siguiente"; sin total ni salto a una pagina (ver D-03). |
 | RF-15, usuario de auditoria | Usuario fijo `cartera`; la autenticacion esta fuera de alcance. |
 | Pruebas | Se probaron el dominio, el heredado y CF-03/CF-04 contra PostgreSQL real. Los demas casos frontera se verificaron a mano contra el sistema levantado. |
 
@@ -31,7 +31,7 @@ concurrencia, zona horaria) y el modulo heredado. Lo siguiente se dejo fuera a p
    ejemplo Windows-1252), las tildes y la enie llegarian como caracteres invalidos en vez de
    rechazarse con un mensaje claro.
 6. Hasta un minuto despues de un lote grande, filtrar por varios estados a la vez puede pasar de
-   300 ms (PR-01), mientras PostgreSQL actualiza sus estadisticas (ver D-09).
+   300 ms (PR-01), mientras PostgreSQL actualiza sus estadisticas.
 
 ## Que haria con dos dias mas
 

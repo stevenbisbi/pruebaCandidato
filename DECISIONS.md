@@ -150,28 +150,7 @@ formas, mas una entidad y un mapper por tabla.
 **Costo aceptado:** un cambio de columna no falla al compilar sino al ejecutar; lo atrapan las
 pruebas de integracion contra PostgreSQL.
 
-### D-02. Un solo caso de uso para las dos vias de entrada (RF-17)
-
-El lote llega en CSV o en JSON, pero se procesa igual. Hay un solo caso de uso
-(`ReconcileBatchUseCase`) y dos adaptadores de entrada (`BatchFileController`, `BatchPayController`)
-que lo invocan con el mismo lote.
-
-**Descartado:** un caso de uso por canal. Duplicaba la regla de negocio y metia en la aplicacion
-una distincion que solo le importa al adaptador.
-
-### D-03. Arquitectura hexagonal
-
-- `domain`: modelo, reglas y puertos de salida (`repository`). No depende de Spring ni de JDBC.
-- `application`: puertos de entrada (`usecase`) y su implementacion.
-- `adapters/inbound`: REST y lectura de CSV. Los DTO y mappers HTTP viven aqui, no en la aplicacion.
-- `adapters/outbound`: persistencia JDBC.
-
-### D-04. Dinero sin perdida de precision (RF-05)
-
-`BigDecimal` en Java, `NUMERIC(18,2)` en la base y montos como texto en la API (`"37500483.40"`),
-para que ningun cliente los convierta a punto flotante.
-
-### D-05. Concurrencia entre lotes — CF-04
+### D-02. Concurrencia entre lotes — CF-04
 
 Al procesar un lote, sus facturas se bloquean con `SELECT ... FOR UPDATE`, siempre ordenadas por
 numero. Si dos lotes tocan la misma factura, el segundo espera y ve el saldo ya reducido. El orden
@@ -180,7 +159,7 @@ fijo evita que dos lotes se esperen mutuamente.
 **Descartado:** bloqueo optimista con columna de version. Ante un conflicto obliga a reintentar el
 lote completo, caro con lotes de 50.000 lineas.
 
-### D-06. Paginacion por cursor (PR-03) — CF-08
+### D-03. Paginacion por cursor (PR-03) — CF-08
 
 La pagina siguiente pide las facturas con numero mayor al ultimo visto (`WHERE number > ?`). El
 numero de una factura nunca cambia.
@@ -190,7 +169,7 @@ del filtro, las siguientes se corren una posicion y se omite una.
 
 **Costo aceptado:** no hay total de resultados ni salto directo a la pagina N.
 
-### D-07. Modulo heredado (seccion 8)
+### D-04. Modulo heredado (seccion 8)
 
 **Defectos encontrados:**
 1. **BOM UTF-8:** el archivo de marzo empieza con los bytes `EF BB BF`. Java los lee como un
@@ -227,6 +206,42 @@ justamente el sintoma que reporta Cartera.
 **Cambio de comportamiento consciente:** un archivo con solo el encabezado era un lote vacio
 aceptado; ahora se rechaza, porque un lote sin pagos no tiene nada que conciliar.
 
+### D-05. Contrato de la API: rutas en ingles (se aparta del Anexo A)
+
+El Anexo A sugiere rutas en espanol (`/api/v1/lotes`, `/lotes/archivo`, `/facturas`,
+`/conciliacion/tablero`) y aclara que es una sugerencia: se puede usar otro diseno si se justifica
+y se documenta.
+
+**Decision:** las rutas y los parametros de consulta van en ingles y los recursos en plural, como
+pide la convencion REST:
+
+| Anexo A | Este proyecto |
+|---|---|
+| `POST /api/v1/lotes` | `POST /api/v1/batches` |
+| `POST /api/v1/lotes/archivo` | `POST /api/v1/batches/file` (campo `file`, `id` opcional) |
+| `GET /api/v1/lotes/{id}` | `GET /api/v1/batches/{id}` |
+| `GET /api/v1/lotes/{id}/resultado` | `GET /api/v1/batches/{id}/lines` (paginado: `page`, `size`) y `GET /api/v1/batches/{id}/download` (CSV) |
+| `GET /api/v1/facturas` | `GET /api/v1/invoices` |
+| `GET /api/v1/facturas/{numero}` | `GET /api/v1/invoices/{id}` |
+| `GET /api/v1/conciliacion/tablero` | `GET /api/v1/conciliation` |
+
+El motivo es la consistencia: la seccion 6.3 pide identificadores en ingles, y con rutas en espanol
+la API quedaria en un idioma y el codigo que la atiende en otro (`/lotes` atendido por
+`BatchController`). El Anexo A trae una sola ruta para el resultado; aqui son dos porque la pantalla
+lo necesita paginado (un lote puede tener 50.000 lineas) y la descarga lo necesita completo (RF-22).
+
+**Lo que no cambia:** los campos del JSON de entrada (`loteId`, `origen`, `fechaGeneracion`,
+`pagos`, `referencia`, `numeroFactura`, `valor`, `fechaPago`) y las columnas del CSV
+(`referencia;numero_factura;valor;fecha_pago`) se conservan tal como los define el Anexo A. Son el
+formato que envia Tesoreria, un sistema externo, y cambiarlos le exigiria modificar su integracion.
+
+**Descartado:** usar las rutas del Anexo A tal cual. Cualquier cliente escrito contra el contrato
+sugerido funcionaria sin cambios, pero la API mezclaria idiomas con el codigo. Como el contrato es
+una sugerencia y el cliente de este proyecto es el propio frontend, se prefirio la consistencia.
+
+**Costo aceptado:** quien pruebe la API con las rutas del Anexo A recibe 404. Por eso el contrato
+completo esta en el README.
+
 ## 3. Casos frontera (Anexo B)
 
 | Caso | Resultado esperado | Por que |
@@ -234,8 +249,8 @@ aceptado; ahora se rechaza, porque un lote sin pagos no tiene nada que conciliar
 | CF-01 | Se aplica. El saldo a pagar queda en 0: PAGADA, con ajuste por redondeo de 0,40 en la auditoria. | A-02 |
 | CF-02 | Se rechaza completo por exceder el saldo a pagar (37.500.483). El saldo no cambia (RF-11). | A-02 |
 | CF-03 | El segundo envio devuelve el resultado original; los saldos quedan identicos. | A-06, A-07 |
-| CF-04 | Los lotes se serializan sobre la factura; lo aplicado nunca supera el saldo original. | D-05 |
+| CF-04 | Los lotes se serializan sobre la factura; lo aplicado nunca supera el saldo original. | D-02 |
 | CF-05 | PAGADA, no extemporanea: 23:30 en Colombia es antes del fin del dia de vencimiento. | A-03 |
 | CF-06 | A se aplica (saldo 40); B se rechaza por exceder el saldo. | A-01 |
 | CF-07 | Pendiente de medir. | — |
-| CF-08 | No se repiten ni se omiten facturas. | D-06 |
+| CF-08 | No se repiten ni se omiten facturas. | D-03 |

@@ -41,7 +41,7 @@ El asistente ejecuto el proceso en el orden que pide la seccion 8:
 3. **Correccion.** Se escribio `CsvBatchReader`, que reemplaza al modulo, con 13 pruebas en
    `CsvBatchReaderTest` sobre los mismos archivos reales: marzo se lee completo y abril entrega
    sus 100 lineas, con las 3 sin fecha listas para que el dominio las rechace una por una.
-4. **Documentacion** en DECISIONS.md (D-07): defectos, por que no se veian en desarrollo, la
+4. **Documentacion** en DECISIONS.md (D-04): defectos, por que no se veian en desarrollo, la
    decision de reemplazar y la alternativa descartada.
 
 Los dos archivos de Tesoreria se copiaron a `src/test/resources/legacy`, y se agrego una regla en

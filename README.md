@@ -1,6 +1,6 @@
 # Sistema de Conciliacion de Pagos
 
-Recibe lotes de pago de Tesoreria en CSV, los aplica contra las facturas de proveedores,
+Recibe lotes de pago de Tesoreria en CSV o JSON, los aplica contra las facturas de proveedores,
 rechaza linea por linea lo que no cuadra y muestra el estado de la conciliacion.
 
 - Decisiones, ambiguedades y casos frontera: [DECISIONS.md](DECISIONS.md)
@@ -37,19 +37,27 @@ El frontend hace de proxy de `/api` hacia el backend, asi que basta con el puert
 - **Lotes**: desde la pantalla *Carga de lotes* (subir el CSV), o por API:
 
 ```bash
-curl -F "archivo=@seed/out/lote-50k.csv" http://localhost:3000/api/v1/lotes/archivo
+curl -F "file=@seed/out/lote-50k.csv" http://localhost:8080/api/v1/batches/file
 ```
 
 Los casos del Anexo B estan en `seed/out/casos/`. Se pueden subir en orden desde la UI o con curl.
 
 ## API
 
-| Metodo | Ruta | Descripcion |
-|---|---|---|
-| POST | `/api/v1/lotes/archivo` | Lote CSV (multipart, campo `archivo`; opcionales `loteId`, `origen`). 201 si se proceso ahora, 200 si es un reenvio, 409 si el id existe con otro contenido. |
-| GET | `/api/v1/lotes/{id}` | Resumen del lote. |
-| GET | `/api/v1/lotes/{id}/lineas` | Resultado linea por linea, paginado (`pagina`, `tamano`). |
-| GET | `/api/v1/facturas` | Consulta paginada por cursor (`nit`, `estado` repetible, `cursor`, `tamano`). |
+Las rutas van en ingles y se apartan de las sugeridas en el Anexo A; la equivalencia y el motivo
+estan en [DECISIONS.md](DECISIONS.md), D-05. Los campos del JSON de entrada y las columnas del CSV
+si son los del Anexo A.
+
+| Metodo | Ruta | Descripcion | Estado |
+|---|---|---|---|
+| POST | `/api/v1/batches` | Lote en JSON (formato del Anexo A). | Definido, sin implementar |
+| POST | `/api/v1/batches/file` | Lote CSV (multipart, campo `file`; `id` opcional). | Definido, sin implementar |
+| GET | `/api/v1/batches/{id}` | Resumen del lote. | Definido, sin implementar |
+| GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page`, `size`). | Definido, sin implementar |
+| GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV (RF-22). | Definido, sin implementar |
+| GET | `/api/v1/invoices` | Consulta paginada de facturas con filtros (RF-23). | Definido, sin implementar |
+| GET | `/api/v1/invoices/{id}` | Detalle de una factura. | Definido, sin implementar |
+| GET | `/api/v1/conciliation` | Tablero de conciliacion (RF-24). | Definido, sin implementar |
 
 Todos los montos viajan como texto decimal (`"37500483.40"`), nunca como numero JSON.
 
@@ -71,8 +79,6 @@ cd frontend && npm ci && npm test
 |---|---|
 | `ImportadorCsvLegacyCharacterizationTest` | Comportamiento actual del importador heredado, defectos incluidos. |
 | `CsvBatchReaderTest` | Los mismos archivos con el lector que lo reemplaza. |
-| `BatchReconcilerTest` | CF-01, CF-02, CF-05, CF-06, frontera horaria, duplicados, lineas invalidas, RF-19. |
-| `BatchProcessingIntegrationTest` | CF-03 y CF-04 contra PostgreSQL real. |
 | `money.test.ts` | Formato colombiano sin perdida de precision (incluye montos > 2^53). |
 | `pages.test.tsx` | Vista reconstruida desde la URL, estados vacio/error, doble clic (RF-27). |
 
@@ -93,6 +99,6 @@ backend/pagos/        Spring Boot 3.5, Java 21 (hexagonal)
     inbound/csv/      Lector del CSV de Tesoreria.
     outbound/persistence/  Implementacion JDBC de los puertos (@Repository).
 frontend/             React 18 + TypeScript + Vite 6 + Tailwind 3 + RTK Query
-legacy/               Importador heredado tal como se entrego (ver DECISIONS.md, D-10)
+legacy/               Importador heredado tal como se entrego (ver DECISIONS.md, D-04)
 seed/out/             Datos de prueba
 ```

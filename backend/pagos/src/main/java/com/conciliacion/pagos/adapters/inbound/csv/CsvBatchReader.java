@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * Lee el CSV de Tesoreria (referencia;numero_factura;valor;fecha_pago) y lo convierte en lineas
- * de lote. Reemplaza al importador heredado (seccion 8, DECISIONS.md D-07).
+ * de lote. Reemplaza al importador heredado (seccion 8, DECISIONS.md D-04).
  *
  * Diferencias con el heredado:
  * - Quita el BOM UTF-8 que agregan Excel o el Bloc de notas (defecto 1).
