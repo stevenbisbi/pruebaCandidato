@@ -203,6 +203,30 @@ sin BOM y con todas las columnas llenas. Los de Tesoreria dependen de como se ex
 guardados con Excel llevan BOM, y si a un pago le falto la fecha queda el campo vacio. Por eso "a
 veces entra y a veces no" al reenviarlo.
 
+**Otros defectos fijados por las pruebas de caracterizacion:** acepta valores 0 y negativos; un
+valor con decimales o una fecha sin zona horaria rechazan el archivo completo; el limite de 100.000
+lineas cuenta tambien las lineas en blanco; el `Stream` de `Files.lines` nunca se cierra.
+
+**Proceso:** primero se copio el modulo sin cambios a `src/test/.../legacy` (solo se agrego la linea
+`package`) y se fijo su comportamiento en `ImportadorCsvLegacyCharacterizationTest`, incluidos los
+defectos. Los pares "marzo con y sin BOM" y "abril con y sin las lineas sin fecha" prueban la causa,
+no solo el sintoma. Despues se escribio el reemplazo.
+
+**Decision:** reemplazar el modulo por `CsvBatchReader`. Quita el BOM, usa `split(";", -1)`, lee
+por streaming, y una linea mala se marca sola (`BatchLine` con `formatError`) mientras el resto del
+lote sigue (RF-21, A-10). Los valores y fechas se entregan como texto y los valida el dominio, asi
+un valor con decimales se redondea segun A-02 en lugar de tumbar el archivo. Solo un archivo vacio,
+un encabezado distinto o mas de 100.000 pagos rechazan el archivo completo. Las pruebas de
+caracterizacion se conservan sobre la copia del modulo original.
+
+**Descartado:** parchar el heredado (quitar el BOM y usar `split(";", -1)`). Eran dos lineas y
+corregian los dos archivos de Tesoreria, pero el modulo seguiria siendo todo o nada: la proxima
+linea mala, por ejemplo un valor con decimales, volveria a rechazar el lote entero, que es
+justamente el sintoma que reporta Cartera.
+
+**Cambio de comportamiento consciente:** un archivo con solo el encabezado era un lote vacio
+aceptado; ahora se rechaza, porque un lote sin pagos no tiene nada que conciliar.
+
 ## 3. Casos frontera (Anexo B)
 
 | Caso | Resultado esperado | Por que |
