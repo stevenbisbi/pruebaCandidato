@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# Los CSV de prueba se conservan byte a byte: el BOM y los finales de linea son parte del caso.
+src/test/resources/**/*.csv -text
