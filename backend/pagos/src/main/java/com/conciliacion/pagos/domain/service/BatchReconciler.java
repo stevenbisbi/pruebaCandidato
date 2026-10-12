@@ -7,6 +7,7 @@ import com.conciliacion.pagos.domain.model.LineResult;
 import com.conciliacion.pagos.domain.model.RejectionReason;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -56,7 +57,7 @@ public class BatchReconciler {
 
         Invoice invoice = invoices.get(line.invoiceNumber());
 
-        // 2. RF-10: el valor debe ser un entero positivo en pesos.
+        // 2. RF-10 y A-02: el valor se redondea al peso mas cercano y debe quedar positivo.
         BigDecimal amount = parseAmount(line.rawAmount());
         if (amount == null) {
             return rejected(line, RejectionReason.VALOR_INVALIDO, "Valor recibido: '" + line.rawAmount() + "'", null, null, invoice);
@@ -83,18 +84,18 @@ public class BatchReconciler {
             return rejected(line, RejectionReason.EXCEDE_SALDO, "Saldo a pagar: " + invoice.payableBalance(), amount, paidAt, invoice);
         }
 
-        // 7. Todo bien: se aplica el pago.
+        // 7. Todo bien: se aplica el pago. Invoice devuelve el ajuste por redondeo (A-02).
         BigDecimal balanceBefore = invoice.balance();
-        invoice.apply(amount, paidAt.toInstant());
+        BigDecimal adjustment = invoice.apply(amount, paidAt.toInstant());
         usedReferences.add(line.reference());
 
-        // Si el pago supero el saldo por centavos (porque el saldo se redondea al peso), queda anotado.
+        // Si el valor recibido traia decimales, queda anotado el original (A-02).
         String detail = null;
-        if (amount.compareTo(balanceBefore) > 0) {
-            detail = "Centavos redondeados: " + amount.subtract(balanceBefore);
+        if (amount.compareTo(new BigDecimal(line.rawAmount().trim())) != 0) {
+            detail = "Valor recibido: " + line.rawAmount().trim();
         }
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
-            LineOutcome.APLICADO, null, detail, balanceBefore, invoice.balance(), invoice.status());
+            LineOutcome.APLICADO, null, detail, balanceBefore, invoice.balance(), invoice.status(), adjustment);
     }
 
     /** Un rechazo no cambia la factura (RF-11): saldo anterior y posterior son iguales. */
@@ -105,15 +106,19 @@ public class BatchReconciler {
             balance = invoice.balance();
         }
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
-            LineOutcome.RECHAZADO, reason, detail, balance, balance, invoice == null ? null : invoice.status());
+            LineOutcome.RECHAZADO, reason, detail, balance, balance, invoice == null ? null : invoice.status(), null);
     }
 
-    /** Devuelve el valor como BigDecimal, o null si no es un entero positivo de hasta 16 digitos. */
+    /**
+     * Devuelve el valor redondeado al peso mas cercano (A-02), o null si no es un numero positivo
+     * de hasta 16 digitos enteros con punto decimal opcional, o si al redondear queda en cero.
+     * La coma no se acepta como separador decimal: el Anexo A usa punto.
+     */
     private BigDecimal parseAmount(String raw) {
-        if (raw == null || !raw.trim().matches("\\d{1,16}")) {
+        if (raw == null || !raw.trim().matches("\\d{1,16}(\\.\\d+)?")) {
             return null;
         }
-        BigDecimal amount = new BigDecimal(raw.trim()).setScale(Invoice.MONEY_SCALE);
+        BigDecimal amount = new BigDecimal(raw.trim()).setScale(0, RoundingMode.HALF_UP).setScale(Invoice.MONEY_SCALE);
         if (amount.signum() <= 0) {
             return null;
         }

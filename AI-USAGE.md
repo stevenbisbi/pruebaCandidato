@@ -48,6 +48,25 @@ Los dos archivos de Tesoreria se copiaron a `src/test/resources/legacy`, y se ag
 `.gitattributes` para que Git no les cambie los finales de linea: los bytes exactos son parte del
 caso de prueba.
 
+### 1.4 Dominio y sus pruebas
+
+- **`Invoice`.** Las validaciones del constructor (total positivo, saldo entre 0 y el total) y el
+  campo `hadLatePayment` los empece yo; el asistente completo el resto: el saldo a pagar con HALF_UP
+  (A-02), `apply()` devolviendo el ajuste por redondeo y la regla de pago tardio (A-04).
+- **`BatchReconciler`, `LineResult`, `RejectionReason`.** El asistente adapto el reconciliador para
+  aceptar valores con decimales y redondearlos al peso (A-02), registrar el valor recibido y pasar
+  el ajuste de la factura al resultado de la linea, que gano el campo `roundingAdjustment`.
+- **Un caso que detecto el asistente:** la primera idea fue dar la factura por saldada cuando su
+  saldo redondeado llega a 0. No funciona con un sobrepago de medio peso: saldo 100,50, pago de 101,
+  saldo nuevo -0,50, y HALF_UP lleva -0,50 a -1 (se aleja del cero), asi que la factura no se
+  cerraria. La condicion quedo en "saldo nuevo menor a 0,50", y la prueba
+  `halfPesoRoundsUpSoTheInvoiceIsSettledWithAnOverpayment` lo fija.
+- **Pruebas.** Nunca habia escrito pruebas unitarias; el asistente me explico la estructura
+  (preparar, ejecutar, verificar) y escribi la primera, la de CF-01 en `InvoiceTest`. Las demas las
+  genero el asistente: 14 mas en `InvoiceTest` y 17 en `BatchReconcilerTest`, que cubren CF-01,
+  CF-02, CF-05, CF-06 en los dos ordenes, A-04, A-05, valores y fechas invalidos y referencias
+  duplicadas. Todas pasan con la JVM en UTC (`-Duser.timezone=UTC`), como en el contenedor.
+
 ## 2. Que se le corrigio a la salida
 
 - **Redondeo de centavos hacia arriba.** La primera version redondeaba el saldo hacia arriba al

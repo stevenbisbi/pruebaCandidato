@@ -40,6 +40,8 @@ significa al valor mas cercano. La lectura literal, redondear a dos decimales, s
   valor original recibido y el valor aplicado. Si al redondear queda en 0, se rechaza por valor
   invalido.
 
+-La coma no se acepta como separador decimal (100,5 se rechaza por valor invalido): el Anexo A usa punto.
+
 **Descartado 1:** redondear a dos decimales (lectura literal). Una factura con 0,40 de saldo no
 podria saldarse nunca: un pago de 1 peso excede el saldo y RF-09 obliga a rechazarlo. Quedaria
 PARCIAL para siempre.

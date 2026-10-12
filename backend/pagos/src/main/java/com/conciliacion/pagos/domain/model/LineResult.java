@@ -11,10 +11,12 @@ import java.time.OffsetDateTime;
  * @param paidAt fecha de pago interpretada, o null si no se pudo interpretar
  * @param detail texto libre con el dato que causo el rechazo, para el operador
  * @param balanceBefore null cuando la factura no existe
+ * @param roundingAdjustment ajuste por redondeo al saldar la factura (A-02); null en los rechazos
  */
 public record LineResult(int lineNumber, String reference, String invoiceNumber, BigDecimal amount,
                          OffsetDateTime paidAt, LineOutcome outcome, RejectionReason reason, String detail,
-                         BigDecimal balanceBefore, BigDecimal balanceAfter, InvoiceStatus statusAfter) {
+                         BigDecimal balanceBefore, BigDecimal balanceAfter, InvoiceStatus statusAfter,
+                         BigDecimal roundingAdjustment) {
 
     public boolean isApplied() {
         return outcome == LineOutcome.APLICADO;
