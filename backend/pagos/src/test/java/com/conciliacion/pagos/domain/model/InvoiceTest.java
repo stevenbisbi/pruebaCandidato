@@ -57,28 +57,38 @@ class InvoiceTest {
     }
 
     @Test
-    void halfPesoRoundsUpSoTheInvoiceIsSettledWithAnOverpayment() {
-        // 100,50 se cobra como 101. Al pagarlo el saldo quedaria en -0,50, que HALF_UP llevaria a -1:
-        // la factura debe quedar saldada igual, con el sobrepago registrado.
-        Invoice invoice = invoice("100.50");
+    void payingTheWholePartSettlesTheInvoiceEvenWithMoreThanHalfAPesoOfCents() {
+        // Caso real del lote de 50.000: Tesoreria paga la parte entera y descarta los centavos. Con la
+        // regla anterior (redondear al mas cercano) 0,72 se cobraba como 1 peso y la factura quedaba
+        // PARCIAL para siempre.
+        Invoice invoice = invoice("30202062.72");
 
-        BigDecimal adjustment = invoice.apply(new BigDecimal("101"), ON_TIME);
+        BigDecimal adjustment = invoice.apply(new BigDecimal("30202062"), ON_TIME);
 
         assertThat(invoice.status()).isEqualTo(InvoiceStatus.PAGADA);
         assertThat(invoice.balance()).isEqualByComparingTo("0");
-        assertThat(adjustment).isEqualByComparingTo("-0.50");
+        assertThat(adjustment).isEqualByComparingTo("0.72");
     }
 
     @Test
-    void halfPesoLeftAfterAPaymentKeepsTheInvoicePartial() {
+    void aPaymentAboveTheWholePartIsNotAccepted() {
+        Invoice invoice = invoice("100.99");
+
+        // El saldo a pagar es 100: un peso mas, aunque cubra los centavos, excede el saldo (RF-09).
+        assertThat(invoice.payableBalance()).isEqualByComparingTo("100");
+        assertThat(invoice.accepts(new BigDecimal("101"))).isFalse();
+    }
+
+    @Test
+    void aPartialPaymentKeepsTheCentsInTheBalance() {
         Invoice invoice = invoice("100.50");
 
-        BigDecimal adjustment = invoice.apply(new BigDecimal("100"), ON_TIME);
+        BigDecimal adjustment = invoice.apply(new BigDecimal("60"), ON_TIME);
 
-        // 0,50 redondea a 1 peso: todavia hay algo que cobrar.
+        // Los centavos solo se condonan al saldar: mientras quede mas de un peso, se conservan.
         assertThat(invoice.status()).isEqualTo(InvoiceStatus.PARCIAL);
-        assertThat(invoice.balance()).isEqualByComparingTo("0.50");
-        assertThat(invoice.payableBalance()).isEqualByComparingTo("1");
+        assertThat(invoice.balance()).isEqualByComparingTo("40.50");
+        assertThat(invoice.payableBalance()).isEqualByComparingTo("40");
         assertThat(adjustment).isEqualByComparingTo("0");
     }
 

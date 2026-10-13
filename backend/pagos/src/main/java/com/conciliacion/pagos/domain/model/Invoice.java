@@ -16,8 +16,8 @@ public final class Invoice {
 
     public static final int MONEY_SCALE = 2;
 
-    /** Un saldo por debajo de medio peso redondea a 0 pesos: la factura queda saldada (A-02). */
-    private static final BigDecimal HALF_PESO = new BigDecimal("0.50");
+    /** Un saldo de menos de un peso no se puede pagar en pesos enteros: la factura queda saldada (A-02). */
+    private static final BigDecimal ONE_PESO = new BigDecimal("1.00");
 
     private final String number;
     private final BigDecimal totalAmount;
@@ -49,11 +49,12 @@ public final class Invoice {
     }
 
     /**
-     * Saldo que se le puede cobrar a Tesoreria: el saldo redondeado al peso mas cercano, porque
-     * Tesoreria paga sin centavos (RF-10, A-02). Ejemplo: 37.500.483,40 se cobra como 37.500.483.
+     * Saldo que se le puede cobrar a Tesoreria: el saldo sin los centavos, porque Tesoreria paga en
+     * pesos enteros (RF-10) y, cuando salda una factura, paga la parte entera (A-02). Ejemplo:
+     * 37.500.483,40 se cobra como 37.500.483, y 30.202.062,72 como 30.202.062.
      */
     public BigDecimal payableBalance() {
-        return balance.setScale(0, RoundingMode.HALF_UP).setScale(MONEY_SCALE);
+        return balance.setScale(0, RoundingMode.FLOOR).setScale(MONEY_SCALE);
     }
 
     /** RF-09: el pago se acepta solo si cabe completo en el saldo a pagar. */
@@ -64,8 +65,8 @@ public final class Invoice {
     /**
      * RF-07, RF-13, RF-14: descuenta el pago y recalcula el estado.
      *
-     * @return ajuste por redondeo (A-02): positivo si se condonaron centavos, negativo si se pago
-     *         de mas, cero si no hubo ajuste
+     * @return ajuste por redondeo (A-02): los centavos condonados al saldar la factura (de 0,01 a
+     *         0,99), o cero si no hubo ajuste. Nunca es negativo: el pago no puede superar el saldo.
      */
     public BigDecimal apply(BigDecimal amount, Instant paidAt) {
         if (amount.signum() <= 0) {
@@ -81,10 +82,10 @@ public final class Invoice {
 
         BigDecimal newBalance = balance.subtract(amount);
         BigDecimal adjustment = BigDecimal.ZERO.setScale(MONEY_SCALE);
-        // Por debajo de medio peso la factura queda saldada. No se compara el saldo redondeado contra
-        // cero porque HALF_UP lleva -0,50 a -1 (se aleja del cero), y un sobrepago de medio peso no
-        // la cerraria. Como accepts() ya limito el pago, el saldo nuevo nunca baja de -0,50.
-        if (newBalance.compareTo(HALF_PESO) < 0) {
+        // Si queda menos de un peso, ya no hay nada que Tesoreria pueda pagar: la factura queda
+        // saldada y los centavos se registran como ajuste. Como accepts() limita el pago a la parte
+        // entera del saldo, el saldo nuevo nunca queda negativo.
+        if (newBalance.compareTo(ONE_PESO) < 0) {
             adjustment = newBalance;
             newBalance = BigDecimal.ZERO.setScale(MONEY_SCALE);
         }
