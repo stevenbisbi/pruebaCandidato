@@ -67,6 +67,19 @@ caso de prueba.
   CF-02, CF-05, CF-06 en los dos ordenes, A-04, A-05, valores y fechas invalidos y referencias
   duplicadas. Todas pasan con la JVM en UTC (`-Duser.timezone=UTC`), como en el contenedor.
 
+### 1.5 Procesamiento de lotes y API
+
+- **Procesar un lote** (`ReconcileBatchService`, `IncomingBatch`, los adaptadores JDBC y la
+  migracion V5): el asistente propuso el diseno y el codigo, y yo lo fui escribiendo y armando paso
+  a paso con su guia, corrigiendo los errores de compilacion que aparecian (imports con paquetes
+  equivocados, una clase sin la linea `package`, un `record` con un componente de mas).
+- **Endpoints de entrada** (`POST /batches` y `POST /batches/file`): los escribi con la guia del
+  asistente. Al probarlos aparecio un `StackOverflowError`: el metodo `respond` se llamaba a si mismo
+  en lugar de armar la respuesta. Lo encontramos leyendo los logs del contenedor.
+- **Desde la consulta de lotes** (`GET /batches/{id}` y `/lines`, con filtros por resultado y motivo)
+  la implementacion la hace el asistente y yo reviso, pruebo en Postman y hago el commit de cada paso.
+  Tambien escribio `BatchResultServiceTest` y el manejo uniforme de errores (`ApiExceptionHandler`).
+
 ## 2. Que se le corrigio a la salida
 
 - **Redondeo de centavos hacia arriba.** La primera version redondeaba el saldo hacia arriba al

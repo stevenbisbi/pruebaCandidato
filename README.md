@@ -50,10 +50,10 @@ si son los del Anexo A.
 
 | Metodo | Ruta | Descripcion | Estado |
 |---|---|---|---|
-| POST | `/api/v1/batches` | Lote en JSON (formato del Anexo A). | Definido, sin implementar |
-| POST | `/api/v1/batches/file` | Lote CSV (multipart, campo `file`; `id` opcional). | Definido, sin implementar |
-| GET | `/api/v1/batches/{id}` | Resumen del lote. | Definido, sin implementar |
-| GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page`, `size`). | Definido, sin implementar |
+| POST | `/api/v1/batches` | Lote en JSON (formato del Anexo A). 201 si se proceso, 200 si es un reenvio, 400 si el JSON no es valido o no trae pagos, 409 si el id existe con otro contenido. | Implementado |
+| POST | `/api/v1/batches/file` | Lote CSV (multipart, campo `file`; `id` y `source` opcionales). Mismas respuestas que el JSON. | Implementado |
+| GET | `/api/v1/batches/{id}` | Resumen del lote. 404 si no existe. | Implementado |
+| GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page` desde 0, `size` hasta 500) y filtrable por `outcome` (`APLICADO`, `RECHAZADO`) y `reason` (motivo de rechazo). | Implementado |
 | GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV (RF-22). | Definido, sin implementar |
 | GET | `/api/v1/invoices` | Consulta paginada de facturas con filtros (RF-23). | Definido, sin implementar |
 | GET | `/api/v1/invoices/{id}` | Detalle de una factura. | Definido, sin implementar |

@@ -4,15 +4,23 @@ import org.springframework.stereotype.Repository;
 
 import com.conciliacion.pagos.domain.model.Batch;
 import com.conciliacion.pagos.domain.model.BatchChannel;
+import com.conciliacion.pagos.domain.model.InvoiceStatus;
+import com.conciliacion.pagos.domain.model.LineOutcome;
+import com.conciliacion.pagos.domain.model.LinePage;
 import com.conciliacion.pagos.domain.model.LineResult;
+import com.conciliacion.pagos.domain.model.RejectionReason;
 
 import com.conciliacion.pagos.domain.repository.BatchRepository;
 import com.conciliacion.pagos.domain.repository.PaymentLedger;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -111,9 +119,55 @@ public class BatchPayPersistenceAdapter implements BatchRepository, PaymentLedge
             });
     }
 
+    /**
+     * Pagina por numero de linea con LIMIT/OFFSET: el resultado de un lote no cambia despues de
+     * procesarlo, asi que no hay riesgo de saltar o repetir filas. La llave primaria
+     * (batch_id, line_number) cubre el filtro por lote y el orden.
+     */
     @Override
-    public List<LineResult> findLines(String batchId, int page, int size) {
-        // Se implementa con el endpoint GET /batches/{id}/lines.
-        throw new UnsupportedOperationException("Pendiente");
+    public LinePage findLines(String batchId, LineOutcome outcome, RejectionReason reason, int page, int size) {
+        StringBuilder where = new StringBuilder(" WHERE batch_id = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(batchId);
+        if (outcome != null) {
+            where.append(" AND outcome = ?");
+            params.add(outcome.name());
+        }
+        if (reason != null) {
+            where.append(" AND reason = ?");
+            params.add(reason.name());
+        }
+
+        Long total = jdbc.queryForObject("SELECT count(*) FROM payment_line_result" + where, Long.class,
+            params.toArray());
+
+        List<Object> pageParams = new ArrayList<>(params);
+        pageParams.add(size);
+        pageParams.add((long) page * size);
+        List<LineResult> items = jdbc.query("""
+            SELECT line_number, reference, invoice_number, amount, paid_at, outcome, reason, detail,
+                   balance_before, balance_after, status_after, rounding_adjustment
+            FROM payment_line_result""" + where + " ORDER BY line_number LIMIT ? OFFSET ?",
+            (rs, n) -> toLineResult(rs), pageParams.toArray());
+
+        return new LinePage(items, page, size, total == null ? 0 : total);
+    }
+
+    private LineResult toLineResult(ResultSet rs) throws SQLException {
+        String reason = rs.getString("reason");
+        String statusAfter = rs.getString("status_after");
+        return new LineResult(
+            rs.getInt("line_number"),
+            rs.getString("reference"),
+            rs.getString("invoice_number"),
+            rs.getBigDecimal("amount"),
+            rs.getObject("paid_at", OffsetDateTime.class),
+            LineOutcome.valueOf(rs.getString("outcome")),
+            reason == null ? null : RejectionReason.valueOf(reason),
+            rs.getString("detail"),
+            rs.getBigDecimal("balance_before"),
+            rs.getBigDecimal("balance_after"),
+            statusAfter == null ? null : InvoiceStatus.valueOf(statusAfter),
+            rs.getBigDecimal("rounding_adjustment"));
     }
 }

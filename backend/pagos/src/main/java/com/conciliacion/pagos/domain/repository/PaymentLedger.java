@@ -1,6 +1,9 @@
 package com.conciliacion.pagos.domain.repository;
 
+import com.conciliacion.pagos.domain.model.LineOutcome;
+import com.conciliacion.pagos.domain.model.LinePage;
 import com.conciliacion.pagos.domain.model.LineResult;
+import com.conciliacion.pagos.domain.model.RejectionReason;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -20,6 +23,9 @@ public interface PaymentLedger {
      * Una pagina del resultado de un lote, ordenada por numero de linea (RF-22). Aqui sirve la
      * paginacion por numero de pagina: el resultado de un lote no cambia despues de procesarlo,
      * asi que no hay riesgo de saltar o repetir filas como en las facturas (PR-03).
+     *
+     * @param outcome filtro opcional por resultado; null para todas
+     * @param reason filtro opcional por motivo de rechazo (RF-26); null para todos
      */
-    List<LineResult> findLines(String batchId, int page, int size);
+    LinePage findLines(String batchId, LineOutcome outcome, RejectionReason reason, int page, int size);
 }
