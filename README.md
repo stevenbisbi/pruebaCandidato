@@ -92,7 +92,7 @@ cd frontend && npm ci && npm test
 |---|---|
 | `ImportadorCsvLegacyCharacterizationTest` | Comportamiento actual del importador heredado, defectos incluidos. |
 | `CsvBatchReaderTest` | Los mismos archivos con el lector que lo reemplaza. |
-| `InvoiceTest` | Redondeo al peso (CF-01, CF-02, sobrepago de medio peso), pago tardio (CF-05, A-04), reglas del constructor. |
+| `InvoiceTest` | Saldo a pagar sin centavos (CF-01, CF-02, el caso real de 0,72 del lote de 50.000), pago tardio (CF-05, A-04), reglas del constructor. |
 | `BatchReconcilerTest` | Aplicacion linea por linea: CF-06 en los dos ordenes, decimales, fechas, referencias duplicadas, textos largos. |
 | `BatchProcessingIntegrationTest` | Contra PostgreSQL real: CF-03 (con reenvios simultaneos), CF-04 (lotes concurrentes), conflicto A-07, referencia repetida en lotes concurrentes, auditoria. |
 | `DashboardIntegrationTest` | Cifras del tablero (RF-24, A-08) contra PostgreSQL real. |

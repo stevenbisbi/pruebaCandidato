@@ -23,35 +23,42 @@ RF-19 al pie de la letra, pero viola RF-18 y deja sin aplicar un pago de 60 que 
 La factura tiene centavos (RF-04) y Tesoreria paga en pesos enteros (RF-10). Una factura de
 37.500.483,40 no puede quedar en cero con pagos enteros.
 
-**Interpretacion.** El contacto indico "redondee a los centavos". Se entiende como redondear los
-centavos al peso entero mas cercano (`RoundingMode.HALF_UP`): sin otra indicacion, "redondear"
-significa al valor mas cercano. La lectura literal, redondear a dos decimales, se descarta abajo
-(Descartado 1).
+**Interpretacion.** El contacto indico "redondee a los centavos", sin decir hacia donde. Lo que
+decidio la direccion fueron los datos: en el lote de 50.000 lineas, cuando Tesoreria salda una
+factura con centavos paga la parte entera y descarta los centavos (30.202.062,72 se paga con
+30.202.062). Se adopta esa misma regla: el saldo que se le cobra a Tesoreria es el saldo **sin los
+centavos** (`RoundingMode.FLOOR`).
 
 **Decision:**
 - La factura **guarda** su valor con dos decimales (RF-04, RF-05). El redondeo no modifica datos
   guardados: solo se usa para comparar y para decidir cuando la factura queda saldada.
-- **Saldo a pagar** = saldo redondeado al peso con HALF_UP. 37.500.483,40 se paga como 37.500.483.
+- **Saldo a pagar** = saldo sin centavos. 37.500.483,40 se paga como 37.500.483.
 - Un pago se acepta si es menor o igual al saldo a pagar. Si es mayor, se rechaza completo (RF-09).
-- Cuando el saldo a pagar llega a 0, la factura queda saldada: el saldo se deja en 0 y la
-  diferencia de centavos se registra en la auditoria de la linea como ajuste por redondeo
-  (positivo si se condona, negativo si se pago de mas).
-- Un pago que llega con decimales se redondea al peso con la misma regla. La auditoria conserva el
-  valor original recibido y el valor aplicado. Si al redondear queda en 0, se rechaza por valor
-  invalido.
+- Cuando queda menos de un peso, ya no hay nada que se pueda pagar en pesos enteros: la factura queda
+  saldada, el saldo se deja en 0 y los centavos se registran en la auditoria de la linea como ajuste
+  por redondeo (de 0,01 a 0,99).
+- Un pago que llega con decimales se redondea al peso **mas cercano**: es dinero que Tesoreria si
+  envio, y truncarlo le acreditaria menos de lo que pago. La auditoria conserva el valor recibido y
+  el aplicado. Si al redondear queda en 0, se rechaza por valor invalido.
 - La coma no se acepta como separador decimal (`100,5` se rechaza por valor invalido): el Anexo A
   usa punto.
 
-**Descartado 1:** redondear a dos decimales (lectura literal). Una factura con 0,40 de saldo no
-podria saldarse nunca: un pago de 1 peso excede el saldo y RF-09 obliga a rechazarlo. Quedaria
-PARCIAL para siempre.
+**Descartado 1:** redondear el saldo al peso mas cercano (`HALF_UP`). Fue la primera regla adoptada,
+y la medicion con el lote de 50.000 la descarto: de 16.418 pagos con los que Tesoreria salda una
+factura con centavos, los 8.259 cuyos centavos eran 0,50 o mas dejaban la factura PARCIAL con un saldo
+de 0,50 a 0,99, esperando un pago de un peso que Tesoreria no envia. Son justamente las diferencias que
+el sistema debe evitar que aparezcan al cierre de mes. Ademas permitia pagar hasta 0,50 de mas.
 
-**Descartado 2:** redondear siempre hacia arriba. La entidad nunca condona centavos, pero aceptaria
-pagos mayores que el saldo (37.500.484 sobre 37.500.483,40), y la regla de negocio de RF-09 es que un
-pago que excede el saldo no se aplica.
+**Descartado 2:** redondear a dos decimales y comparar exacto (lectura literal de la respuesta). Una
+factura con 0,40 de saldo no podria saldarse nunca: un pago de 1 peso excede el saldo y RF-09 obliga a
+rechazarlo.
 
-**Costo aceptado:** se condonan hasta 0,49 pesos por factura y se pueden pagar hasta 0,50 de mas.
-Ninguno de los dos se pierde: queda registrado en la auditoria.
+**Descartado 3:** redondear siempre hacia arriba. La entidad nunca condonaria centavos, pero
+aceptaria pagos mayores que el saldo (37.500.484 sobre 37.500.483,40), y la regla de negocio de RF-09
+es que un pago que excede el saldo no se aplica.
+
+**Costo aceptado:** se condonan hasta 0,99 pesos por factura, y nunca se cobra de mas. Lo condonado no
+se pierde: queda registrado en la auditoria de la linea que saldo la factura.
 
 ### A-03. Que instante define el pago extemporaneo (RF-13) — CF-05
 

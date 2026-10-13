@@ -55,19 +55,15 @@ caso de prueba.
 ### 1.4 Dominio y sus pruebas
 
 - **`Invoice`.** Las validaciones del constructor (total positivo, saldo entre 0 y el total) y el
-  campo `hadLatePayment` los empece yo; el asistente completo el resto: el saldo a pagar con HALF_UP
-  (A-02), `apply()` devolviendo el ajuste por redondeo y la regla de pago tardio (A-04).
+  campo `hadLatePayment` los empece yo; el asistente completo el resto: el saldo a pagar sin centavos
+  (A-02, ver la correccion en la seccion 2), `apply()` devolviendo el ajuste por redondeo y la regla
+  de pago tardio (A-04).
 - **`BatchReconciler`, `LineResult`, `RejectionReason`.** El asistente adapto el reconciliador para
   aceptar valores con decimales y redondearlos al peso (A-02), registrar el valor recibido y pasar
   el ajuste de la factura al resultado de la linea, que gano el campo `roundingAdjustment`.
-- **Un caso que detecto el asistente:** la primera idea fue dar la factura por saldada cuando su
-  saldo redondeado llega a 0. No funciona con un sobrepago de medio peso: saldo 100,50, pago de 101,
-  saldo nuevo -0,50, y HALF_UP lleva -0,50 a -1 (se aleja del cero), asi que la factura no se
-  cerraria. La condicion quedo en "saldo nuevo menor a 0,50", y la prueba
-  `halfPesoRoundsUpSoTheInvoiceIsSettledWithAnOverpayment` lo fija.
 - **Pruebas.** Nunca habia escrito pruebas unitarias; el asistente me explico la estructura
   (preparar, ejecutar, verificar) y escribi la primera, la de CF-01 en `InvoiceTest`. Las demas las
-  genero el asistente: 14 mas en `InvoiceTest` y 17 en `BatchReconcilerTest`, que cubren CF-01,
+  genero el asistente: el resto de `InvoiceTest` y `BatchReconcilerTest`, que cubren CF-01,
   CF-02, CF-05, CF-06 en los dos ordenes, A-04, A-05, valores y fechas invalidos y referencias
   duplicadas. Todas pasan con la JVM en UTC (`-Duser.timezone=UTC`), como en el contenedor.
 
@@ -127,7 +123,13 @@ Correcciones que hice yo sobre lo que propuso el asistente:
   (`RoundingMode.CEILING`), y con eso CF-02 aceptaba un pago de 37.500.484 sobre un saldo de
   37.500.483,40, aunque RF-09 dice que un pago que excede el saldo se rechaza completo. Le pregunte al
   contacto que hacer con los centavos y respondio "redondee a los centavos". Con esa respuesta se paso
-  a redondear al peso mas cercano (HALF_UP): CF-02 se rechaza y CF-01 deja la factura saldada (A-02).
+  a redondear al peso mas cercano (HALF_UP): CF-02 se rechaza y CF-01 deja la factura saldada.
+- **Facturas colgadas por centavos.** Despues de cargar el lote de 50.000 note que habia miles de
+  facturas con saldo menor a un peso y pregunte por que. El asistente lo rastreo: eran 8.259, todas de
+  ese lote, todas entre 0,50 y 0,99. Tesoreria salda las facturas pagando la parte entera, y con
+  HALF_UP unos centavos de 0,50 o mas se cobraban como un peso entero, asi que la factura quedaba
+  PARCIAL esperando un pago que nunca llega. Se cambio a cobrar el saldo sin centavos (FLOOR): CF-01 y
+  CF-02 dan lo mismo y ninguna factura queda colgada (A-02).
 - **Estructura de carpetas.** No me convencia la estructura de la primera version: un caso de uso por
   canal de entrada (CSV y JSON), clases con nombres de JPA sin JPA en el proyecto, el lector de CSV
   como adaptador de salida y los DTO HTTP en la capa de aplicacion. La reorganice; despues, revisando
