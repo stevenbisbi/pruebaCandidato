@@ -21,6 +21,15 @@ public class InvoiceSearchService implements SearchInvoicesUseCase {
 
     @Override
     public InvoicePage search(InvoiceFilter filter) {
+        return invoices.search(normalize(filter));
+    }
+
+    @Override
+    public long count(InvoiceFilter filter) {
+        return invoices.count(normalize(filter));
+    }
+
+    private InvoiceFilter normalize(InvoiceFilter filter) {
         if (filter.dueFrom() != null && filter.dueTo() != null && filter.dueFrom().isAfter(filter.dueTo())) {
             throw new InvalidRequestException("El vencimiento desde no puede ser posterior al vencimiento hasta");
         }
@@ -29,14 +38,14 @@ public class InvoiceSearchService implements SearchInvoicesUseCase {
             throw new InvalidRequestException("El saldo minimo no puede ser mayor que el saldo maximo");
         }
         // Un texto vacio en la URL (?nit=) cuenta como "sin filtro", no como "NIT vacio".
-        InvoiceFilter normalized = new InvoiceFilter(
+        return new InvoiceFilter(
             blankToNull(filter.supplierNit()),
             filter.statuses() == null ? Set.of() : filter.statuses(),
             filter.dueFrom(), filter.dueTo(),
             filter.minBalance(), filter.maxBalance(),
             blankToNull(filter.afterNumber()),
-            Math.clamp(filter.size(), 1, MAX_PAGE_SIZE));
-        return invoices.search(normalized);
+            Math.clamp(filter.size(), 1, MAX_PAGE_SIZE),
+            Math.max(filter.page(), 1));
     }
 
     private String blankToNull(String value) {

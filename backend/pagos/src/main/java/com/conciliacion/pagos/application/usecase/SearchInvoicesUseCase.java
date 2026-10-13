@@ -15,4 +15,11 @@ public interface SearchInvoicesUseCase {
      * @throws InvalidRequestException si un rango esta invertido (desde mayor que hasta)
      */
     InvoicePage search(InvoiceFilter filter);
+
+    /**
+     * Cuantas facturas cumplen los filtros, para numerar las paginas.
+     *
+     * @throws InvalidRequestException si un rango esta invertido
+     */
+    long count(InvoiceFilter filter);
 }

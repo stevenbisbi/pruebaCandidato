@@ -16,6 +16,7 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -32,40 +33,20 @@ public class InvoiceQueryAdapter implements InvoiceQueryPort {
         this.jdbc = jdbc;
     }
 
+    private static final String SELECT_VIEW = """
+        SELECT i.number, i.supplier_nit, s.name AS supplier_name, i.issue_date, i.due_date,
+               i.total_amount, i.balance, i.status
+        FROM invoice i
+        JOIN supplier s ON s.nit = i.supplier_nit
+        WHERE TRUE""";
+
     @Override
     public InvoicePage search(InvoiceFilter filter) {
-        StringBuilder sql = new StringBuilder("""
-            SELECT i.number, i.supplier_nit, s.name AS supplier_name, i.issue_date, i.due_date,
-                   i.total_amount, i.balance, i.status
-            FROM invoice i
-            JOIN supplier s ON s.nit = i.supplier_nit
-            WHERE TRUE""");
+        if (filter.afterNumber() == null && filter.page() > 1) {
+            return jumpToPage(filter);
+        }
         List<Object> params = new ArrayList<>();
-
-        if (filter.supplierNit() != null) {
-            sql.append(" AND i.supplier_nit = ?");
-            params.add(filter.supplierNit());
-        }
-        if (!filter.statuses().isEmpty()) {
-            sql.append(" AND i.status = ANY (?)");
-            params.add(filter.statuses().stream().map(InvoiceStatus::name).toArray(String[]::new));
-        }
-        if (filter.dueFrom() != null) {
-            sql.append(" AND i.due_date >= ?");
-            params.add(filter.dueFrom());
-        }
-        if (filter.dueTo() != null) {
-            sql.append(" AND i.due_date <= ?");
-            params.add(filter.dueTo());
-        }
-        if (filter.minBalance() != null) {
-            sql.append(" AND i.balance >= ?");
-            params.add(filter.minBalance());
-        }
-        if (filter.maxBalance() != null) {
-            sql.append(" AND i.balance <= ?");
-            params.add(filter.maxBalance());
-        }
+        StringBuilder sql = new StringBuilder(SELECT_VIEW).append(where(filter, params));
         // Paginacion por cursor (D-03): la pagina siguiente empieza despues de la ultima factura vista.
         if (filter.afterNumber() != null) {
             sql.append(" AND i.number > ?");
@@ -81,6 +62,81 @@ public class InvoiceQueryAdapter implements InvoiceQueryPort {
         }
         List<InvoiceView> page = rows.subList(0, filter.size());
         return new InvoicePage(page, page.get(page.size() - 1).number());
+    }
+
+    /** Sin join con proveedores: el filtro no lo necesita y el conteo es mas barato (D-03). */
+    @Override
+    public long count(InvoiceFilter filter) {
+        List<Object> params = new ArrayList<>();
+        Long total = jdbc.queryForObject("SELECT count(*) FROM invoice i WHERE TRUE" + where(filter, params),
+            Long.class, params.toArray());
+        return total == null ? 0 : total;
+    }
+
+    /**
+     * Salto directo a la pagina N, sin cursor (D-03). OFFSET obliga a recorrer todas las filas
+     * anteriores, asi que se posiciona desde el extremo mas cercano: una pagina de la segunda mitad
+     * (la ultima incluida) se lee al reves desde el final y se le da vuelta. Nunca se recorre mas de
+     * la mitad del resultado. Una pagina mas alla del final devuelve la ultima.
+     */
+    private InvoicePage jumpToPage(InvoiceFilter filter) {
+        long total = count(filter);
+        int size = filter.size();
+        long lastPage = Math.max(1, (total + size - 1) / size);
+        long offset = (Math.min(filter.page(), lastPage) - 1) * size;
+        int rowsInPage = (int) Math.min(size, total - offset);
+        if (rowsInPage <= 0) {
+            return new InvoicePage(List.of(), null);
+        }
+
+        List<Object> params = new ArrayList<>();
+        String where = where(filter, params);
+        List<InvoiceView> rows;
+        if (offset <= total / 2) {
+            params.add(rowsInPage);
+            params.add(offset);
+            rows = jdbc.query(SELECT_VIEW + where + " ORDER BY i.number LIMIT ? OFFSET ?",
+                (rs, n) -> toView(rs), params.toArray());
+        } else {
+            params.add(rowsInPage);
+            params.add(total - offset - rowsInPage);
+            rows = new ArrayList<>(jdbc.query(SELECT_VIEW + where + " ORDER BY i.number DESC LIMIT ? OFFSET ?",
+                (rs, n) -> toView(rs), params.toArray()));
+            Collections.reverse(rows);
+        }
+        // Desde aqui, "Siguiente" vuelve a ser por cursor: el recorrido pagina a pagina es estable (PR-03).
+        boolean hasNext = !rows.isEmpty() && offset + rows.size() < total;
+        return new InvoicePage(rows, hasNext ? rows.get(rows.size() - 1).number() : null);
+    }
+
+    /** Las condiciones de los filtros que vienen; los que no vienen no se agregan (RF-23). */
+    private String where(InvoiceFilter filter, List<Object> params) {
+        StringBuilder where = new StringBuilder();
+        if (filter.supplierNit() != null) {
+            where.append(" AND i.supplier_nit = ?");
+            params.add(filter.supplierNit());
+        }
+        if (!filter.statuses().isEmpty()) {
+            where.append(" AND i.status = ANY (?)");
+            params.add(filter.statuses().stream().map(InvoiceStatus::name).toArray(String[]::new));
+        }
+        if (filter.dueFrom() != null) {
+            where.append(" AND i.due_date >= ?");
+            params.add(filter.dueFrom());
+        }
+        if (filter.dueTo() != null) {
+            where.append(" AND i.due_date <= ?");
+            params.add(filter.dueTo());
+        }
+        if (filter.minBalance() != null) {
+            where.append(" AND i.balance >= ?");
+            params.add(filter.minBalance());
+        }
+        if (filter.maxBalance() != null) {
+            where.append(" AND i.balance <= ?");
+            params.add(filter.maxBalance());
+        }
+        return where.toString();
     }
 
     @Override

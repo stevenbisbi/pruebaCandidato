@@ -31,6 +31,12 @@ class InvoiceSearchServiceTest {
         }
 
         @Override
+        public long count(InvoiceFilter filter) {
+            received = filter;
+            return 0;
+        }
+
+        @Override
         public Optional<InvoiceView> findByNumber(String number) {
             return Optional.empty();
         }
@@ -67,7 +73,7 @@ class InvoiceSearchServiceTest {
 
     @Test
     void treatsBlankTextsAsNoFilter() {
-        service.search(new InvoiceFilter("  ", null, null, null, null, null, "", 50));
+        service.search(new InvoiceFilter("  ", null, null, null, null, null, "", 50, 1));
 
         assertThat(received.supplierNit()).isNull();
         assertThat(received.afterNumber()).isNull();
@@ -76,7 +82,7 @@ class InvoiceSearchServiceTest {
 
     @Test
     void keepsTheStatusesAndTrimsTheNit() {
-        service.search(new InvoiceFilter(" 900123 ", Set.of(InvoiceStatus.PARCIAL), null, null, null, null, null, 50));
+        service.search(new InvoiceFilter(" 900123 ", Set.of(InvoiceStatus.PARCIAL), null, null, null, null, null, 50, 1));
 
         assertThat(received.supplierNit()).isEqualTo("900123");
         assertThat(received.statuses()).containsExactly(InvoiceStatus.PARCIAL);
@@ -84,14 +90,22 @@ class InvoiceSearchServiceTest {
 
     @Test
     void adjustsThePageSizeToTheLimits() {
-        service.search(new InvoiceFilter(null, null, null, null, null, null, null, 10_000));
+        service.search(new InvoiceFilter(null, null, null, null, null, null, null, 10_000, 1));
         assertThat(received.size()).isEqualTo(SearchInvoicesUseCase.MAX_PAGE_SIZE);
 
-        service.search(new InvoiceFilter(null, null, null, null, null, null, null, 0));
+        service.search(new InvoiceFilter(null, null, null, null, null, null, null, 0, 0));
         assertThat(received.size()).isEqualTo(1);
+        assertThat(received.page()).isEqualTo(1);
+    }
+
+    @Test
+    void theCountValidatesTheSameRangesAsTheSearch() {
+        InvoiceFilter inverted = filter(LocalDate.of(2026, 3, 31), LocalDate.of(2026, 3, 1), null, null);
+
+        assertThatThrownBy(() -> service.count(inverted)).isInstanceOf(InvalidRequestException.class);
     }
 
     private InvoiceFilter filter(LocalDate from, LocalDate to, BigDecimal min, BigDecimal max) {
-        return new InvoiceFilter(null, Set.of(), from, to, min, max, null, 50);
+        return new InvoiceFilter(null, Set.of(), from, to, min, max, null, 50, 1);
     }
 }

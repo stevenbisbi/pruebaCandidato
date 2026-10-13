@@ -14,9 +14,13 @@ public interface InvoiceQueryPort {
     /**
      * Facturas que cumplen el filtro, ordenadas por numero. La pagina siguiente se pide con el
      * numero de la ultima factura (D-03): asi no se repiten ni se omiten facturas aunque un lote
-     * cambie estados y saldos mientras se navega (PR-03, CF-08).
+     * cambie estados y saldos mientras se navega (PR-03, CF-08). Sin cursor, filter.page() permite
+     * saltar directamente a una pagina.
      */
     InvoicePage search(InvoiceFilter filter);
+
+    /** Cuantas facturas cumplen el filtro (el cursor, la pagina y el tamano no cuentan). */
+    long count(InvoiceFilter filter);
 
     /** La factura con ese numero, o vacio si no existe. */
     Optional<InvoiceView> findByNumber(String number);

@@ -37,6 +37,11 @@ class InvoiceDetailServiceTest {
         }
 
         @Override
+        public long count(InvoiceFilter filter) {
+            return 0;
+        }
+
+        @Override
         public Optional<InvoiceView> findByNumber(String number) {
             return INVOICE.number().equals(number) ? Optional.of(INVOICE) : Optional.empty();
         }

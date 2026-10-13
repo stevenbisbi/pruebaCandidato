@@ -15,7 +15,8 @@ import java.util.Set;
  * @param maxBalance saldo pendiente hasta (inclusive)
  * @param afterNumber cursor de paginacion (PR-03): numero de la ultima factura de la pagina anterior
  * @param size cuantas facturas devolver
+ * @param page numero de pagina (desde 1) para saltar directamente a ella; solo se usa sin cursor
  */
 public record InvoiceFilter(String supplierNit, Set<InvoiceStatus> statuses, LocalDate dueFrom, LocalDate dueTo,
-                            BigDecimal minBalance, BigDecimal maxBalance, String afterNumber, int size) {
+                            BigDecimal minBalance, BigDecimal maxBalance, String afterNumber, int size, int page) {
 }
