@@ -9,6 +9,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Puerto de salida: el resultado de cada linea, que es tambien la auditoria (RF-15, RF-21). */
 public interface PaymentLedger {
@@ -28,4 +29,11 @@ public interface PaymentLedger {
      * @param reason filtro opcional por motivo de rechazo (RF-26); null para todos
      */
     LinePage findLines(String batchId, LineOutcome outcome, RejectionReason reason, int page, int size);
+
+    /**
+     * Recorre todas las lineas de un lote en orden, entregandolas una a una, sin cargarlas todas en
+     * memoria (RF-22: descarga de un lote de hasta 100.000 lineas). Debe llamarse dentro de una
+     * transaccion para que la base las envie en tandas.
+     */
+    void forEachLine(String batchId, Consumer<LineResult> consumer);
 }

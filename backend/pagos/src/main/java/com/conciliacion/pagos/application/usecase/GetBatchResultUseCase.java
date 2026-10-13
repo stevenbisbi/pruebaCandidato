@@ -3,7 +3,10 @@ package com.conciliacion.pagos.application.usecase;
 import com.conciliacion.pagos.domain.model.Batch;
 import com.conciliacion.pagos.domain.model.LineOutcome;
 import com.conciliacion.pagos.domain.model.LinePage;
+import com.conciliacion.pagos.domain.model.LineResult;
 import com.conciliacion.pagos.domain.model.RejectionReason;
+
+import java.util.function.Consumer;
 
 /** Puerto de entrada: consultar un lote ya procesado y su resultado linea por linea (RF-21, RF-22). */
 public interface GetBatchResultUseCase {
@@ -23,4 +26,11 @@ public interface GetBatchResultUseCase {
      * @throws NotFoundException si el lote no existe
      */
     LinePage getLines(String id, LineOutcome outcome, RejectionReason reason, int page, int size);
+
+    /**
+     * Entrega todas las lineas del lote en orden, una a una, para descargarlas (RF-22).
+     *
+     * @throws NotFoundException si el lote no existe
+     */
+    void exportLines(String id, Consumer<LineResult> consumer);
 }

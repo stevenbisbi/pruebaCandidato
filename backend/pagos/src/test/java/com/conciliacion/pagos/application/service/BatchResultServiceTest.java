@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,6 +44,13 @@ class BatchResultServiceTest {
     @Test
     void linesOfAnUnknownBatchAreNotFoundInsteadOfAnEmptyPage() {
         assertThatThrownBy(() -> service.getLines("NO-EXISTE", null, null, 0, 100))
+            .isInstanceOf(NotFoundException.class);
+        assertThat(ledger.called).isFalse();
+    }
+
+    @Test
+    void exportingAnUnknownBatchIsNotFoundBeforeWritingAnything() {
+        assertThatThrownBy(() -> service.exportLines("NO-EXISTE", line -> { }))
             .isInstanceOf(NotFoundException.class);
         assertThat(ledger.called).isFalse();
     }
@@ -111,6 +119,11 @@ class BatchResultServiceTest {
             this.page = page;
             this.size = size;
             return new LinePage(List.of(), page, size, 0);
+        }
+
+        @Override
+        public void forEachLine(String batchId, Consumer<LineResult> consumer) {
+            this.called = true;
         }
     }
 }

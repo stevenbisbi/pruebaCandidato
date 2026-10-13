@@ -14,6 +14,7 @@ import com.conciliacion.pagos.domain.repository.BatchRepository;
 import com.conciliacion.pagos.domain.repository.PaymentLedger;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -25,6 +26,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Lotes y resultado por linea en PostgreSQL. */
 @Repository
@@ -151,6 +153,28 @@ public class BatchPayPersistenceAdapter implements BatchRepository, PaymentLedge
             (rs, n) -> toLineResult(rs), pageParams.toArray());
 
         return new LinePage(items, page, size, total == null ? 0 : total);
+    }
+
+    /**
+     * Con fetchSize, PostgreSQL entrega las filas en tandas de 1.000 en lugar de mandar el lote
+     * entero de una vez. Solo funciona dentro de una transaccion (sin autocommit).
+     */
+    @Override
+    public void forEachLine(String batchId, Consumer<LineResult> consumer) {
+        jdbc.query(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                SELECT line_number, reference, invoice_number, amount, paid_at, outcome, reason, detail,
+                       balance_before, balance_after, status_after, rounding_adjustment
+                FROM payment_line_result
+                WHERE batch_id = ?
+                ORDER BY line_number
+                """);
+            ps.setFetchSize(INSERT_BATCH_SIZE);
+            ps.setString(1, batchId);
+            return ps;
+        }, rs -> {
+            consumer.accept(toLineResult(rs));
+        });
     }
 
     private LineResult toLineResult(ResultSet rs) throws SQLException {

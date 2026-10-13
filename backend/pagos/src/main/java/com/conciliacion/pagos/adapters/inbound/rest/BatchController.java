@@ -14,7 +14,9 @@ import com.conciliacion.pagos.domain.model.BatchLine;
 import com.conciliacion.pagos.domain.model.LineOutcome;
 import com.conciliacion.pagos.domain.model.LinePage;
 import com.conciliacion.pagos.domain.model.RejectionReason;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /** Lotes de pago: recepcion por JSON o CSV (RF-17) y consulta del resultado (RF-21, RF-22). */
@@ -84,10 +88,22 @@ public class BatchController {
             result.page(), result.size(), result.totalItems(), result.hasNext());
     }
 
-    /** GET /api/v1/batches/{id}/download: resultado completo en CSV (RF-22, A-09). Pendiente. */
+    /**
+     * GET /api/v1/batches/{id}/download: resultado completo en CSV (RF-22, A-09). Las lineas se
+     * escriben a medida que llegan de la base, sin cargar el lote entero en memoria.
+     */
     @GetMapping("/{id}/download")
-    public void downloadResult(@PathVariable String id) {
-        // Se implementa en su propio commit.
+    public void downloadResult(@PathVariable String id, HttpServletResponse response) throws IOException {
+        // Primero se confirma que el lote existe: si no, responde 404 antes de empezar a escribir el archivo.
+        batchResult.getBatch(id);
+        // El id viene de Tesoreria: solo se dejan caracteres seguros en el nombre del archivo.
+        String fileName = "resultado-" + id.replaceAll("[^A-Za-z0-9_-]", "_") + ".csv";
+        response.setContentType("text/csv");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"");
+        Writer writer = response.getWriter();
+        batchResult.exportLines(id, new BatchResultCsvWriter(writer));
+        writer.flush();
     }
 
     /** 201 si el lote se proceso ahora, 200 si era un reenvio (RF-20). */
