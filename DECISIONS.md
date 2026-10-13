@@ -244,6 +244,47 @@ una sugerencia y el cliente de este proyecto es el propio frontend, se prefirio 
 **Costo aceptado:** quien pruebe la API con las rutas del Anexo A recibe 404. Por eso el contrato
 completo esta en el README.
 
+### D-06. Rendimiento de la consulta de facturas (PR-01)
+
+**Como se midio:** base sembrada (500.000 facturas) despues de procesar el lote de 50.000, en Docker
+local. Veinte peticiones por combinacion de filtros con `curl`, y las mas costosas tambien con diez
+clientes en paralelo (100 peticiones).
+
+**Lo que aparecio:** con los indices por NIT y por estado (V3), casi todas las combinaciones
+respondian en menos de 20 ms. La excepcion fue un rango de saldo angosto sin otros filtros
+(`minBalance=1000000&maxBalance=1001000`, 7 facturas): 144 ms con un cliente y **435 ms en el p95
+con diez en paralelo**, que no cumple PR-01. Sin indice por saldo, PostgreSQL recorre las 500.000
+facturas en orden de numero buscando las pocas que cumplen.
+
+**Primer intento, insuficiente:** un indice por saldo. Mejoro las combinaciones con estado, pero el
+caso principal siguio en ~116 ms. `EXPLAIN ANALYZE` mostro la causa: la misma consulta tardaba 0,18 ms
+con el plan armado para sus valores y 109 ms con el plan generico. El driver JDBC reutiliza las
+consultas preparadas, y desde la sexta ejecucion PostgreSQL usa un plan generico que no mira los
+valores del filtro; sin ellos no sabe que el rango es angosto y elige recorrer la tabla.
+
+**Decision:** el indice por saldo (V6) mas `plan_cache_mode = force_custom_plan` en cada conexion
+(`application.properties`), para que el plan siempre se arme con los valores reales.
+
+| Combinacion | Antes (p95) | Despues (p95) |
+|---|---|---|
+| Sin filtros, NIT, estado, vencimiento (1 dia y 1 mes) | 8-15 ms | 7-15 ms |
+| Rango de saldo angosto | 144 ms | 10 ms |
+| Estado + rango de saldo angosto | 108-128 ms | 8-10 ms |
+| Un dia de vencimiento + saldo angosto | 85 ms | 7 ms |
+| Rango imposible (sin resultados) | 102 ms | 7 ms |
+| Rango de saldo angosto, 10 clientes en paralelo | **435 ms** | **20 ms** |
+
+**Descartado 1:** forzar planes especificos con `prepareThreshold=0` en la URL de conexion. Logra lo
+mismo, pero la URL se sobrescribe con la variable `DB_URL` del docker-compose y habria que mantenerla
+en dos lugares.
+
+**Descartado 2:** indice por fecha de vencimiento. Las consultas por vencimiento ya respondian en
+menos de 20 ms: los vencimientos estan repartidos en 24 meses, asi que recorriendo por numero se
+juntan 50 resultados enseguida. Seria un indice mas que mantener sin una mejora medible.
+
+**Costo aceptado:** cada pago aplicado actualiza tambien el indice por saldo, lo que puede hacer mas
+lento el lote de 50.000 (PR-02). Pendiente de medir sobre una base recien sembrada.
+
 ## 3. Casos frontera (Anexo B)
 
 | Caso | Resultado esperado | Por que |
@@ -255,4 +296,4 @@ completo esta en el README.
 | CF-05 | PAGADA, no extemporanea: 23:30 en Colombia es antes del fin del dia de vencimiento. | A-03 |
 | CF-06 | A se aplica (saldo 40); B se rechaza por exceder el saldo. | A-01 |
 | CF-07 | Pendiente de medir. | — |
-| CF-08 | No se repiten ni se omiten facturas. | D-03 |
+| CF-08 | No se repiten ni se omiten facturas. Verificado sin lotes en curso: 8.742 facturas recorridas en 44 paginas, igual al conteo en SQL, sin repetidas. Falta repetirlo mientras se procesa un lote. | D-03 |

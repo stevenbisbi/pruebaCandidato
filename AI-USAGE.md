@@ -79,6 +79,10 @@ caso de prueba.
 - **Desde la consulta de lotes** (`GET /batches/{id}` y `/lines`, con filtros por resultado y motivo)
   la implementacion la hace el asistente y yo reviso, pruebo en Postman y hago el commit de cada paso.
   Tambien escribio `BatchResultServiceTest` y el manejo uniforme de errores (`ApiExceptionHandler`).
+- **Consulta de facturas** (`GET /invoices`): la implemento el asistente y midio el rendimiento. Encontro
+  que un rango de saldo angosto no cumplia PR-01 con diez clientes en paralelo (435 ms) y que el indice
+  por saldo no bastaba por el plan generico de las consultas preparadas; lo diagnostico con
+  `EXPLAIN ANALYZE` (D-06). Tambien escribio `InvoiceSearchServiceTest`.
 
 ## 2. Que se le corrigio a la salida
 

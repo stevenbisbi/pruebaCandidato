@@ -3,6 +3,7 @@ package com.conciliacion.pagos.adapters.inbound.rest;
 import com.conciliacion.pagos.adapters.inbound.csv.InvalidCsvException;
 import com.conciliacion.pagos.adapters.inbound.rest.dto.ErrorResponse;
 import com.conciliacion.pagos.application.usecase.BatchConflictException;
+import com.conciliacion.pagos.application.usecase.InvalidRequestException;
 import com.conciliacion.pagos.application.usecase.NotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -50,6 +51,12 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> invalidParameter(MethodArgumentTypeMismatchException e) {
         return error(HttpStatus.BAD_REQUEST, "Valor invalido para el parametro '" + e.getName() + "': " + e.getValue());
+    }
+
+    /** Datos incoherentes en la peticion, por ejemplo un rango de fechas invertido. */
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ErrorResponse> invalidRequest(InvalidRequestException e) {
+        return error(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
     @ExceptionHandler(NotFoundException.class)

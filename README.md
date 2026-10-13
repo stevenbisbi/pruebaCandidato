@@ -55,7 +55,7 @@ si son los del Anexo A.
 | GET | `/api/v1/batches/{id}` | Resumen del lote. 404 si no existe. | Implementado |
 | GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page` desde 0, `size` hasta 500) y filtrable por `outcome` (`APLICADO`, `RECHAZADO`) y `reason` (motivo de rechazo). | Implementado |
 | GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV (RF-22). | Definido, sin implementar |
-| GET | `/api/v1/invoices` | Consulta paginada de facturas con filtros (RF-23). | Definido, sin implementar |
+| GET | `/api/v1/invoices` | Consulta de facturas por cursor (RF-23). Filtros combinables: `nit`, `status` (repetible), `dueFrom` y `dueTo` (AAAA-MM-DD), `minBalance` y `maxBalance`. Paginacion: `size` (50 por defecto, hasta 200) y `cursor` (el `nextCursor` de la pagina anterior). | Implementado |
 | GET | `/api/v1/invoices/{id}` | Detalle de una factura. | Definido, sin implementar |
 | GET | `/api/v1/conciliation` | Tablero de conciliacion (RF-24). | Definido, sin implementar |
 
