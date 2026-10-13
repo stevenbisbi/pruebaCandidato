@@ -4,12 +4,16 @@ import com.conciliacion.pagos.application.usecase.InvalidRequestException;
 import com.conciliacion.pagos.application.usecase.SearchInvoicesUseCase;
 import com.conciliacion.pagos.domain.model.InvoiceFilter;
 import com.conciliacion.pagos.domain.model.InvoicePage;
+import com.conciliacion.pagos.domain.model.InvoicePayment;
 import com.conciliacion.pagos.domain.model.InvoiceStatus;
+import com.conciliacion.pagos.domain.model.InvoiceView;
+import com.conciliacion.pagos.domain.repository.InvoiceQueryPort;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,9 +23,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class InvoiceSearchServiceTest {
 
     private InvoiceFilter received;
-    private final InvoiceSearchService service = new InvoiceSearchService(filter -> {
-        received = filter;
-        return new InvoicePage(List.of(), null);
+    private final InvoiceSearchService service = new InvoiceSearchService(new InvoiceQueryPort() {
+        @Override
+        public InvoicePage search(InvoiceFilter filter) {
+            received = filter;
+            return new InvoicePage(List.of(), null);
+        }
+
+        @Override
+        public Optional<InvoiceView> findByNumber(String number) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<InvoicePayment> findPayments(String number) {
+            return List.of();
+        }
     });
 
     @Test

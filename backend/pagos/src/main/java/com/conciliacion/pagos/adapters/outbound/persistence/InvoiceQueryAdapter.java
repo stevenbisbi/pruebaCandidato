@@ -2,8 +2,11 @@ package com.conciliacion.pagos.adapters.outbound.persistence;
 
 import com.conciliacion.pagos.domain.model.InvoiceFilter;
 import com.conciliacion.pagos.domain.model.InvoicePage;
+import com.conciliacion.pagos.domain.model.InvoicePayment;
 import com.conciliacion.pagos.domain.model.InvoiceStatus;
 import com.conciliacion.pagos.domain.model.InvoiceView;
+import com.conciliacion.pagos.domain.model.LineOutcome;
+import com.conciliacion.pagos.domain.model.RejectionReason;
 import com.conciliacion.pagos.domain.repository.InvoiceQueryPort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -11,8 +14,10 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Consulta de facturas con filtros combinables (RF-23). Solo se agregan al WHERE los filtros que
@@ -76,6 +81,49 @@ public class InvoiceQueryAdapter implements InvoiceQueryPort {
         }
         List<InvoiceView> page = rows.subList(0, filter.size());
         return new InvoicePage(page, page.get(page.size() - 1).number());
+    }
+
+    @Override
+    public Optional<InvoiceView> findByNumber(String number) {
+        List<InvoiceView> rows = jdbc.query("""
+            SELECT i.number, i.supplier_nit, s.name AS supplier_name, i.issue_date, i.due_date,
+                   i.total_amount, i.balance, i.status
+            FROM invoice i
+            JOIN supplier s ON s.nit = i.supplier_nit
+            WHERE i.number = ?
+            """, (rs, n) -> toView(rs), number);
+        return rows.stream().findFirst();
+    }
+
+    /** Usa el indice por numero de factura de V7. */
+    @Override
+    public List<InvoicePayment> findPayments(String number) {
+        return jdbc.query("""
+            SELECT batch_id, line_number, reference, amount, paid_at, outcome, reason, balance_before,
+                   balance_after, status_after, rounding_adjustment, processed_by, processed_at
+            FROM payment_line_result
+            WHERE invoice_number = ?
+            ORDER BY processed_at, batch_id, line_number
+            """, (rs, n) -> toPayment(rs), number);
+    }
+
+    private InvoicePayment toPayment(ResultSet rs) throws SQLException {
+        String reason = rs.getString("reason");
+        String statusAfter = rs.getString("status_after");
+        return new InvoicePayment(
+            rs.getString("batch_id"),
+            rs.getInt("line_number"),
+            rs.getString("reference"),
+            rs.getBigDecimal("amount"),
+            rs.getObject("paid_at", OffsetDateTime.class),
+            LineOutcome.valueOf(rs.getString("outcome")),
+            reason == null ? null : RejectionReason.valueOf(reason),
+            rs.getBigDecimal("balance_before"),
+            rs.getBigDecimal("balance_after"),
+            statusAfter == null ? null : InvoiceStatus.valueOf(statusAfter),
+            rs.getBigDecimal("rounding_adjustment"),
+            rs.getString("processed_by"),
+            rs.getTimestamp("processed_at").toInstant());
     }
 
     private InvoiceView toView(ResultSet rs) throws SQLException {
