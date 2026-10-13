@@ -39,15 +39,16 @@ significa al valor mas cercano. La lectura literal, redondear a dos decimales, s
 - Un pago que llega con decimales se redondea al peso con la misma regla. La auditoria conserva el
   valor original recibido y el valor aplicado. Si al redondear queda en 0, se rechaza por valor
   invalido.
-
-- La coma no se acepta como separador decimal (100,5 se rechaza por valor invalido): el Anexo A usa punto.
+- La coma no se acepta como separador decimal (`100,5` se rechaza por valor invalido): el Anexo A
+  usa punto.
 
 **Descartado 1:** redondear a dos decimales (lectura literal). Una factura con 0,40 de saldo no
 podria saldarse nunca: un pago de 1 peso excede el saldo y RF-09 obliga a rechazarlo. Quedaria
 PARCIAL para siempre.
 
-**Descartado 2:** redondear siempre hacia arriba. La entidad nunca condona centavos, pero en CF-02
-aceptaria un pago que excede el saldo, contradiciendo RF-09, que es justo lo que ese caso verifica.
+**Descartado 2:** redondear siempre hacia arriba. La entidad nunca condona centavos, pero aceptaria
+pagos mayores que el saldo (37.500.484 sobre 37.500.483,40), y la regla de negocio de RF-09 es que un
+pago que excede el saldo no se aplica.
 
 **Costo aceptado:** se condonan hasta 0,49 pesos por factura y se pueden pagar hasta 0,50 de mas.
 Ninguno de los dos se pierde: queda registrado en la auditoria.
@@ -62,9 +63,14 @@ vencimiento en hora de Colombia, con la zona fija en el dominio (`DueDatePolicy.
 `America/Bogota`) y nunca la del servidor, que en el contenedor es UTC. Un pago con fecha
 2026-03-15T23:30:00-05:00 (04:30 UTC del dia 16) queda a tiempo.
 
-**Descartado:** el momento de procesamiento. Hacia fallar CF-05, porque el lote se procesa despues
-del vencimiento aunque se pago a tiempo. Ademas el resultado dependeria de cuando se corre: el mismo
-lote daria estados distintos hoy y manana, y un reenvio (RF-20) podria cambiarlos.
+RF-13 dice "a las 23:59:59". Un pago a las 23:59:59,5 no es posterior a las 23:59:59 en segundos
+enteros, pero si en milisegundos. Se toma como limite el inicio del dia siguiente (00:00:00 en
+Colombia): todo lo anterior es a tiempo, y el primer instante tardio es la medianoche.
+
+**Descartado:** el momento de procesamiento. Tesoreria entrega los pagos del dia en un lote, que
+llega despues del cierre: un pago hecho a tiempo quedaria marcado como extemporaneo solo porque el
+sistema lo proceso al dia siguiente. Ademas el resultado dependeria de cuando se corre: el mismo lote
+daria estados distintos hoy y manana, y un reenvio (RF-20) podria cambiarlos.
 
 ### A-04. Factura saldada con algun pago tardio (RF-13)
 
@@ -116,7 +122,9 @@ RF-24 habla del "rango de fechas filtrado" sin decir que fecha.
 **Decision:** es el mismo filtro de RF-23, por **fecha de vencimiento**. Total facturado, aplicado y
 rechazado se calculan sobre las facturas con vencimiento en ese rango. El total rechazado incluye
 las lineas rechazadas con un valor legible. Las lineas con valor ilegible cuentan como lineas
-rechazadas pero no suman al total, porque no tienen monto.
+rechazadas pero no suman al total, porque no tienen monto. Los rechazos dirigidos a una factura que
+no existe tampoco entran: no tienen fecha de vencimiento con la cual filtrarlos. Se ven en el
+resultado de cada lote.
 
 **Descartado:** filtrar tambien por fecha de emision y por fecha de pago. Daba mas vistas, pero cada
 fecha necesita su propio indice y complica cumplir PR-01. Queda en LIMITACIONES.md.
@@ -136,6 +144,30 @@ El lote de abril trae tres lineas sin fecha.
 **Descartado:** rechazar el lote completo, como hace el importador heredado. Es justamente el
 defecto que reporta Cartera (seccion 8).
 
+### A-11. Estado de la factura: calculado y guardado (RF-03, RF-14)
+
+RF-14 dice que el estado "se calcula a partir de los pagos recibidos". Puede leerse como calcularlo
+cada vez que se consulta, sumando los pagos, o como derivarlo de los pagos cada vez que llega uno.
+
+**Decision:** el estado se deriva en el dominio cada vez que se aplica un pago (`InvoiceStatus.derive`,
+a partir del saldo y de si hubo algun pago tardio) y se guarda en la factura. Nunca se asigna a mano.
+
+**Descartado:** calcularlo en cada consulta sumando los pagos. Es la lectura mas literal, pero el
+filtro por estado de RF-23 no podria usar un indice: habria que sumar los pagos de las 500.000
+facturas para saber cuales estan PARCIAL, y PR-01 (300 ms) no se cumpliria.
+
+### A-12. Que significa que la tabla se mantenga "utilizable" (PR-04)
+
+PR-04 pide que la tabla de facturas siga siendo utilizable "con el filtro mas amplio posible", es
+decir, sin filtros: 500.000 facturas.
+
+**Decision:** la tabla nunca recibe mas de una pagina: 50 facturas por defecto, hasta 200. La
+consulta sin filtros responde en menos de 15 ms (D-06) y la pagina siguiente se pide por cursor.
+
+**Descartado:** traer mas filas y mostrarlas con desplazamiento virtual. Daria una tabla continua,
+pero obliga a transferir y guardar en el navegador miles de filas que nadie va a mirar, y con
+paginacion por cursor no hay forma barata de saltar a la fila N.
+
 ## 2. Decisiones de arquitectura
 
 ### D-01. Persistencia con JDBC en lugar de JPA
@@ -144,7 +176,7 @@ Se usa `JdbcTemplate` con SQL escrito a mano. Cada adaptador de persistencia con
 directamente al modelo de dominio, sin entidades intermedias.
 
 **Descartado:** JPA con Spring Data. Ahorraba el mapeo manual y validaba el mapeo al compilar, pero
-los cuatro puntos dificiles de la prueba son SQL explicito: bloqueo de filas en orden fijo (CF-04),
+las partes criticas de este sistema dependen de SQL explicito: bloqueo de filas en orden fijo (CF-04),
 insercion por lotes de 50.000 lineas (PR-02), filtros combinables con paginacion por cursor (RF-23,
 PR-03) y agregaciones del tablero (RF-24). Con JPA se terminaria escribiendo SQL nativo de todas
 formas, mas una entidad y un mapper por tabla.
@@ -322,6 +354,65 @@ pantalla del tablero se abre con un rango.
 cambia el estado de una factura PostgreSQL actualiza todos sus indices, asi que hace mas lento el lote
 de 50.000 (PR-02), que si es un presupuesto. La alternativa para un tablero mas rapido seria guardar
 los totales por mes y actualizarlos al aplicar cada lote; queda en LIMITACIONES.md.
+
+### D-08. Frontend: Redux Toolkit para los datos del servidor, la URL para el estado de pantalla
+
+El enunciado deja libre la libreria de estado. Se usa Redux Toolkit con RTK Query, y solo para lo
+que llega de la API; lo demas esta escrito con las APIs nativas del navegador:
+
+- **Datos del servidor con RTK Query:** cada endpoint es un hook con carga, error y reintento
+  (RF-29). Guarda una cache por argumento, junta peticiones repetidas, y procesar un lote invalida
+  las facturas, sus detalles y el tablero: las pantallas que los muestran se vuelven a consultar
+  solas, sin que cada una tenga que saber que otra cambio los datos.
+- **Estado de la pantalla en la URL (RF-25):** filtros, cursor, pagina y lote son parametros de la
+  URL con los mismos nombres que usa la API, y no van al store. La navegacion usa la History API
+  (`pushState` y `useSyncExternalStore`), sin libreria de rutas. Pegar un enlace reproduce la misma
+  vista, y atras y adelante funcionan.
+- **Montos (RF-28):** se formatean sobre el texto que manda la API, sin convertir a `number`, para no
+  perder precision por encima de 2^53 (RF-05).
+- **Fechas:** las de vencimiento se muestran desde el texto (`2026-03-15` como `15/03/2026`); los
+  instantes, con `Intl.DateTimeFormat` en `America/Bogota`, sin importar la zona del navegador.
+- **Doble envio (RF-27):** un `useRef` bloquea el segundo clic en el mismo instante (el estado de la
+  mutacion recien se ve en el render siguiente); al terminar, el id del lote queda en la URL, asi que
+  recargar muestra el resultado sin reenviar. El backend, ademas, reconoce el reenvio (RF-20).
+
+**Descartado 1:** guardar tambien los filtros en el store de Redux. Habria que sincronizar el store con
+la URL en los dos sentidos (al filtrar y al usar atras o pegar un enlace); con la URL como unica fuente
+no hay nada que sincronizar.
+
+**Descartado 2:** un hook propio sobre `fetch`, sin Redux. Se probo: hace lo mismo en unas 70 lineas y
+quita dos dependencias, pero sin cache ni invalidacion; despues de procesar un lote, cada pantalla
+tendria que saber que debe volver a consultar.
+
+**Costo aceptado:** dos dependencias y un store global cuyo unico contenido es la cache de la API.
+
+### D-09. Un lote, una transaccion, dentro de la peticion (RF-20, RF-26)
+
+Registrar el lote, bloquear sus facturas, aplicar los pagos, guardar saldos, resultado por linea y
+totales ocurre en una sola transaccion (`ReconcileBatchService`, `@Transactional`), mientras la
+peticion HTTP espera. Si algo falla a mitad de camino no queda nada aplicado, y el reenvio de
+Tesoreria procesa el lote desde cero.
+
+**Descartado:** procesar el lote en segundo plano y que la pantalla consulte el avance. Mostraria un
+avance real (RF-26), pero exige guardar lotes a medio procesar y decidir que pasa con ellos si el
+servidor se cae. Con 7 s para el lote mas grande (CF-07), la espera dentro de la peticion es
+razonable.
+
+**Costo aceptado:** no hay avance linea a linea (la pantalla muestra el tiempo transcurrido), y las
+facturas del lote quedan bloqueadas mientras dura (LIMITACIONES.md).
+
+### D-10. La auditoria vive en el resultado de cada linea (RF-15)
+
+RF-15 pide que toda aplicacion o rechazo quede auditado con usuario, instante, saldo anterior y saldo
+posterior. Cada fila de `payment_line_result` tiene todo eso: es a la vez el resultado del lote
+(RF-21) y la auditoria. Una fila con resultado APLICADO es un pago aplicado; no hay otra tabla de pagos.
+
+**Descartado:** una tabla de auditoria aparte, escrita por el codigo o por un trigger. Separaba "lo que
+paso" de "como se audito", pero duplicaba cada linea y abria la posibilidad de que las dos tablas no
+coincidieran. Aqui el resultado es el registro auditado.
+
+**Costo aceptado:** la tabla crece con cada lote (50.000 filas por carga grande); las consultas por
+lote usan la llave primaria y las consultas por factura, el indice de V7.
 
 ## 3. Casos frontera (Anexo B)
 

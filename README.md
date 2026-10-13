@@ -30,11 +30,23 @@ Para empezar de cero (borra la base): `docker compose down -v`.
 
 El frontend hace de proxy de `/api` hacia el backend, asi que basta con el puerto 3000.
 
+## Pantallas
+
+Todas las rutas se pueden abrir, recargar o compartir directamente: filtros, pagina y lote viven en
+la URL (RF-25).
+
+| Ruta | Que muestra |
+|---|---|
+| `/facturas` | Consulta de facturas con filtros por NIT, estado, rango de vencimiento y rango de saldo (RF-23), paginada por cursor. |
+| `/facturas/{numero}` | Detalle de una factura y todos los pagos que recibio, con su auditoria. |
+| `/lotes` | Carga de un lote por archivo CSV o pegando el JSON (RF-26), y su resultado linea por linea filtrable por resultado y motivo, con descarga en CSV. |
+| `/tablero` | Tablero de conciliacion (RF-24, RF-30). Abre con el mes actual; "Todas" cubre todas las facturas. |
+
 ## Como cargar datos
 
 - **Facturas**: se cargan solas en el primer arranque desde `seed/out/facturas.csv` (migracion
   `db/seed/V2__carga_facturas.sql`, `COPY` del lado del servidor sobre el volumen `/seed`).
-- **Lotes**: desde la pantalla *Carga de lotes* (subir el CSV), o por API:
+- **Lotes**: desde la pantalla *Carga de lotes* (subir el CSV o pegar el JSON), o por API:
 
 ```bash
 curl -F "file=@seed/out/lote-50k.csv" http://localhost:8080/api/v1/batches/file
@@ -86,7 +98,9 @@ cd frontend && npm ci && npm test
 | `DashboardIntegrationTest` | Cifras del tablero (RF-24, A-08) contra PostgreSQL real. |
 | `*ServiceTest`, `BatchResultCsvWriterTest` | Validaciones de los casos de uso y formato del CSV de descarga. |
 | `money.test.ts` | Formato colombiano sin perdida de precision (incluye montos > 2^53). |
-| `pages.test.tsx` | Vista reconstruida desde la URL, estados vacio/error, doble clic (RF-27). |
+| `format.test.ts` | Fechas en hora de Colombia sin importar la zona del navegador, mes actual, parametros de la URL, validacion del JSON. |
+| `errors.test.ts` | Mensajes de error del backend, de nginx (502) y sin conexion. |
+| `pages.test.tsx` | Consulta reconstruida desde la URL (RF-25), formato de montos (RF-28), estados vacio y error (RF-29), doble clic (RF-27), resultado filtrable por motivo (RF-26), tablero (RF-24), facturas que se vuelven a consultar al procesar un lote. |
 
 ## Estructura
 
@@ -104,7 +118,12 @@ backend/pagos/        Spring Boot 3.5, Java 21 (hexagonal)
     inbound/rest/     Controladores REST y respuestas JSON.
     inbound/csv/      Lector del CSV de Tesoreria.
     outbound/persistence/  Implementacion JDBC de los puertos (@Repository).
-frontend/             React 18 + TypeScript + Vite 6 + Tailwind 3 + RTK Query
+frontend/src/         React 18 + TypeScript + Vite 6 + Tailwind 3 + Redux Toolkit (D-08)
+  api/                Contrato de la API y endpoints con RTK Query.
+  store.ts            Store de Redux: solo la cache de RTK Query.
+  lib/                Navegacion con la History API, formato de montos y fechas.
+  components/         Piezas compartidas (estados de carga/error/vacio, enlaces, insignias).
+  pages/              Una pantalla por ruta.
 legacy/               Importador heredado tal como se entrego (ver DECISIONS.md, D-04)
 seed/out/             Datos de prueba
 ```

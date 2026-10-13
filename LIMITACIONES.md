@@ -4,11 +4,11 @@
 
 | Requisito | Estado | Por que |
 |---|---|---|
-| RF-25 a RF-30, frontend | Pendiente de esta etapa | Se priorizo el backend: la correccion de la conciliacion (dinero, reenvios, concurrencia, zona horaria, volumen) es donde fallan estas aplicaciones en produccion. **Actualizar al cerrar el frontend.** |
-| RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: 7 s para 50.000 lineas. La pantalla solo puede mostrar "procesando" mientras espera la respuesta. |
+| RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: 7 s para 50.000 lineas. La pantalla muestra una barra indeterminada y los segundos transcurridos mientras espera la respuesta. |
 | RF-15, usuario de la auditoria | Usuario fijo `cartera` | La autenticacion esta fuera de alcance (seccion 1.2). El usuario se configura con `APP_USER`. |
 | Paginacion de facturas | Sin total ni salto a una pagina | Es el costo de la paginacion por cursor, que es la que garantiza PR-03 (D-03). |
 | Contrato del Anexo A | Rutas en ingles | Quien pruebe con las rutas sugeridas recibe 404; la equivalencia esta en D-05 y en el README. |
+| RF-24, otras fechas en el tablero | Solo por vencimiento | El tablero filtra por fecha de vencimiento, como la consulta de facturas (A-08); filtrar tambien por emision o por fecha de pago necesitaria indices propios. |
 
 ## Que esta mal o es fragil
 
@@ -26,8 +26,8 @@
    caracteres, una factura de mas de 30 o un detalle de mas de 300 se guarda recortada. Asi no tumba
    el lote, pero el valor original completo no queda guardado.
 6. **La zona horaria original de la fecha de pago no se guarda.** La base guarda el instante: un pago
-   enviado como `00:00-05:00` se devuelve como `05:00Z`. Es el mismo instante, pero la pantalla tiene
-   que convertirlo a hora de Colombia para mostrarlo.
+   enviado como `00:00-05:00` se devuelve como `05:00Z`. Es el mismo instante y la pantalla lo muestra
+   en hora de Colombia, pero quien use la API directamente recibe la hora en UTC.
 7. **Archivos en otra codificacion.** El CSV se lee como UTF-8. Una linea con caracteres de otra
    codificacion (por ejemplo una enie de Windows-1252) se rechaza sola con su motivo; si el archivo
    entero viene en otra codificacion, se rechazan todas las lineas que tengan tildes.
