@@ -26,8 +26,10 @@ import java.util.Set;
  */
 public class BatchReconciler {
 
+    // Coinciden con el largo de las columnas de payment_line_result (V3).
     private static final int MAX_REFERENCE_LENGTH = 80;
     private static final int MAX_INVOICE_LENGTH = 30;
+    private static final int MAX_DETAIL_LENGTH = 300;
 
     /**
      * @param invoices facturas del lote, por numero (las que no existen no estan en el mapa)
@@ -92,7 +94,7 @@ public class BatchReconciler {
         // Si el valor recibido traia decimales, queda anotado el original (A-02).
         String detail = null;
         if (amount.compareTo(new BigDecimal(line.rawAmount().trim())) != 0) {
-            detail = "Valor recibido: " + line.rawAmount().trim();
+            detail = truncate("Valor recibido: " + line.rawAmount().trim(), MAX_DETAIL_LENGTH);
         }
         return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
             LineOutcome.APLICADO, null, detail, balanceBefore, invoice.balance(), invoice.status(), adjustment);
@@ -105,8 +107,22 @@ public class BatchReconciler {
         if (invoice != null) {
             balance = invoice.balance();
         }
-        return new LineResult(line.lineNumber(), line.reference(), line.invoiceNumber(), amount, paidAt,
-            LineOutcome.RECHAZADO, reason, detail, balance, balance, invoice == null ? null : invoice.status(), null);
+        // El rechazo se audita aunque los textos excedan el largo de sus columnas: se recortan. Si se
+        // guardaran completos, la base rechazaria la fila y la transaccion desharia el lote entero
+        // por una sola linea mala, que es el sintoma del importador heredado (seccion 8).
+        return new LineResult(line.lineNumber(),
+            truncate(line.reference(), MAX_REFERENCE_LENGTH),
+            truncate(line.invoiceNumber(), MAX_INVOICE_LENGTH),
+            amount, paidAt, LineOutcome.RECHAZADO, reason,
+            truncate(detail, MAX_DETAIL_LENGTH),
+            balance, balance, invoice == null ? null : invoice.status(), null);
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     /**

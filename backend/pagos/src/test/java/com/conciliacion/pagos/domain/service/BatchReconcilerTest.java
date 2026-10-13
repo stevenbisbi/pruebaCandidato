@@ -190,6 +190,29 @@ class BatchReconcilerTest {
     }
 
     @Test
+    void rejectsTooLongTextsAndTruncatesThemToFitTheAuditColumns() {
+        // Si se guardaran completos, la base rechazaria la fila y se desharia el lote entero.
+        String longReference = "R".repeat(200);
+        String longInvoice = "F".repeat(100);
+
+        LineResult result = single(line(1, longReference, longInvoice, "100", ON_TIME));
+
+        assertThat(result.reason()).isEqualTo(RejectionReason.FORMATO_INVALIDO);
+        assertThat(result.reference()).hasSize(80);
+        assertThat(result.invoiceNumber()).hasSize(30);
+    }
+
+    @Test
+    void truncatesTheDetailOfAnAbsurdAmountToFitItsColumn() {
+        addInvoice("FV-1", "200.00");
+
+        LineResult result = single(line(1, "P-1", "FV-1", "x".repeat(500), ON_TIME));
+
+        assertThat(result.reason()).isEqualTo(RejectionReason.VALOR_INVALIDO);
+        assertThat(result.detail()).hasSize(300);
+    }
+
+    @Test
     void rejectsAPaymentToAnInvoiceThatDoesNotExist() {
         LineResult result = single(line(1, "P-1", "FV-404", "100", ON_TIME));
 
