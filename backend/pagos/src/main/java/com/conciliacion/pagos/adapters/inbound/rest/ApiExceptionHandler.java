@@ -5,6 +5,7 @@ import com.conciliacion.pagos.adapters.inbound.rest.dto.ErrorResponse;
 import com.conciliacion.pagos.application.usecase.BatchConflictException;
 import com.conciliacion.pagos.application.usecase.InvalidRequestException;
 import com.conciliacion.pagos.application.usecase.NotFoundException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -68,6 +69,18 @@ public class ApiExceptionHandler {
     @ExceptionHandler(BatchConflictException.class)
     public ResponseEntity<ErrorResponse> conflict(BatchConflictException e) {
         return error(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    /**
+     * Dos lotes procesados al mismo tiempo, sobre facturas distintas, traen la misma referencia
+     * nueva: ninguno ve la del otro hasta confirmar, y el indice unico de V3 rechaza al segundo
+     * (RF-12). Su transaccion se deshace entera; al reenviarlo, esa linea se rechaza como duplicada
+     * y el resto se aplica.
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<ErrorResponse> concurrentReference(DuplicateKeyException e) {
+        return error(HttpStatus.CONFLICT, "Otro lote aplico al mismo tiempo una referencia de pago de este lote. "
+            + "No se aplico nada; reenvie el lote.");
     }
 
     private ResponseEntity<ErrorResponse> error(HttpStatus status, String message) {
