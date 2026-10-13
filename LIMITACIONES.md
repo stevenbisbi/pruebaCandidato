@@ -6,7 +6,7 @@
 |---|---|---|
 | RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: 7 s para 50.000 lineas. La pantalla muestra una barra indeterminada y los segundos transcurridos mientras espera la respuesta. |
 | RF-15, usuario de la auditoria | Usuario fijo `cartera` | La autenticacion esta fuera de alcance (seccion 1.2). El usuario se configura con `APP_USER`. |
-| Paginacion de facturas | Sin total ni salto a una pagina | Es el costo de la paginacion por cursor, que es la que garantiza PR-03 (D-03). |
+| Paginacion de facturas | Saltos lentos al medio con carga | Saltar a una pagina del medio (la 5.000 de 10.000) tarda 151 ms con un usuario y 607 ms en el p95 con diez en paralelo: OFFSET recorre las filas anteriores (D-03). Avanzar, la primera y la ultima pagina siguen por debajo de 45 ms. |
 | Contrato del Anexo A | Rutas en ingles | Quien pruebe con las rutas sugeridas recibe 404; la equivalencia esta en D-05 y en el README. |
 | RF-24, otras fechas en el tablero | Solo por vencimiento | El tablero filtra por fecha de vencimiento, como la consulta de facturas (A-08); filtrar tambien por emision o por fecha de pago necesitaria indices propios. |
 

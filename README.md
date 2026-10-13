@@ -67,7 +67,8 @@ si son los del Anexo A.
 | GET | `/api/v1/batches/{id}` | Resumen del lote. 404 si no existe. | Implementado |
 | GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page` desde 0, `size` hasta 500) y filtrable por `outcome` (`APLICADO`, `RECHAZADO`) y `reason` (motivo de rechazo). | Implementado |
 | GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV con separador `;` (RF-22). 404 si el lote no existe. | Implementado |
-| GET | `/api/v1/invoices` | Consulta de facturas por cursor (RF-23). Filtros combinables: `nit`, `status` (repetible), `dueFrom` y `dueTo` (AAAA-MM-DD), `minBalance` y `maxBalance`. Paginacion: `size` (50 por defecto, hasta 200) y `cursor` (el `nextCursor` de la pagina anterior). | Implementado |
+| GET | `/api/v1/invoices` | Consulta de facturas (RF-23). Filtros combinables: `nit`, `status` (repetible), `dueFrom` y `dueTo` (AAAA-MM-DD), `minBalance` y `maxBalance`. Paginacion: `size` (50 por defecto, hasta 200), `cursor` (el `nextCursor` de la pagina anterior) o `page` (desde 1, para saltar a una pagina). | Implementado |
+| GET | `/api/v1/invoices/count` | Cuantas facturas cumplen los mismos filtros, para numerar las paginas. | Implementado |
 | GET | `/api/v1/invoices/{id}` | Una factura y todos los pagos que recibio, aplicados y rechazados, con su auditoria. 404 si no existe. | Implementado |
 | GET | `/api/v1/conciliation` | Tablero de conciliacion (RF-24): totales del rango de vencimiento (`dueFrom`, `dueTo`, opcionales) y los diez proveedores con mayor saldo pendiente. | Implementado |
 
@@ -96,10 +97,12 @@ cd frontend && npm ci && npm test
 | `BatchReconcilerTest` | Aplicacion linea por linea: CF-06 en los dos ordenes, decimales, fechas, referencias duplicadas, textos largos. |
 | `BatchProcessingIntegrationTest` | Contra PostgreSQL real: CF-03 (con reenvios simultaneos), CF-04 (lotes concurrentes), conflicto A-07, referencia repetida en lotes concurrentes, auditoria. |
 | `DashboardIntegrationTest` | Cifras del tablero (RF-24, A-08) contra PostgreSQL real. |
+| `InvoiceSearchIntegrationTest` | Saltar a cualquier pagina da las mismas facturas que avanzar con el cursor; ultima pagina y conteo con filtros. |
 | `*ServiceTest`, `BatchResultCsvWriterTest` | Validaciones de los casos de uso y formato del CSV de descarga. |
 | `money.test.ts` | Formato colombiano sin perdida de precision (incluye montos > 2^53). |
 | `format.test.ts` | Fechas en hora de Colombia sin importar la zona del navegador, mes actual, parametros de la URL, validacion del JSON. |
 | `errors.test.ts` | Mensajes de error del backend, de nginx (502) y sin conexion. |
+| `pages.test.ts` | Numeros de pagina a mostrar: primera, ultima y las cercanas a la actual, con huecos. |
 | `pages.test.tsx` | Consulta reconstruida desde la URL (RF-25), formato de montos (RF-28), estados vacio y error (RF-29), doble clic (RF-27), resultado filtrable por motivo (RF-26), tablero (RF-24), facturas que se vuelven a consultar al procesar un lote. |
 
 ## Estructura

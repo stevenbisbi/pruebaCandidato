@@ -169,11 +169,11 @@ PR-04 pide que la tabla de facturas siga siendo utilizable "con el filtro mas am
 decir, sin filtros: 500.000 facturas.
 
 **Decision:** la tabla nunca recibe mas de una pagina: 50 facturas por defecto, hasta 200. La
-consulta sin filtros responde en menos de 15 ms (D-06) y la pagina siguiente se pide por cursor.
+consulta sin filtros responde en menos de 15 ms (D-06); la paginacion muestra el total, los numeros
+de pagina y deja ir a la ultima (D-03).
 
 **Descartado:** traer mas filas y mostrarlas con desplazamiento virtual. Daria una tabla continua,
-pero obliga a transferir y guardar en el navegador miles de filas que nadie va a mirar, y con
-paginacion por cursor no hay forma barata de saltar a la fila N.
+pero obliga a transferir y guardar en el navegador miles de filas que nadie va a mirar.
 
 ## 2. Decisiones de arquitectura
 
@@ -228,7 +228,20 @@ repitio ninguna.
 **Descartado:** `LIMIT/OFFSET`. Si mientras se navega un lote cambia el estado de una factura y sale
 del filtro, las siguientes se corren una posicion y se omite una.
 
-**Costo aceptado:** no hay total de resultados ni salto directo a la pagina N.
+**Numeracion y salto a una pagina.** La pantalla muestra los numeros de pagina y deja ir a la ultima.
+Para eso hay un conteo aparte (`GET /invoices/count`), que el frontend pide una vez por combinacion de
+filtros y no en cada pagina, y un parametro `page` para saltar: el backend se posiciona con OFFSET
+desde el extremo mas cercano, asi que una pagina de la segunda mitad, la ultima incluida, se lee al
+reves desde el final. "Siguiente" sigue siendo por cursor, asi que recorrer pagina a pagina mantiene
+la garantia de PR-03; un salto se posiciona por el conteo del momento, y si un lote cambia facturas
+justo entonces, la pagina puede correrse unas filas.
+
+**Medido** con las 500.000 facturas: conteo, 26 a 64 ms; primera, segunda y ultima pagina, menos de
+45 ms; una pagina del medio (la 5.000 de 10.000), 151 ms con un cliente y 607 ms en el p95 con diez
+en paralelo. OFFSET recorre todas las filas anteriores a la pagina, y en el medio son 250.000.
+
+**Costo aceptado:** saltar a una pagina del medio con muchos usuarios a la vez pasa de 300 ms. La
+consulta que pide PR-01 (filtrar y avanzar) no cambia: sigue en menos de 20 ms.
 
 ### D-04. Modulo heredado (seccion 8)
 
