@@ -2,41 +2,48 @@
 
 ## Que quedo afuera y por que
 
-Se priorizo el nucleo que evalua la prueba: aplicar pagos correctamente (dinero, reenvios,
-concurrencia, zona horaria) y el modulo heredado. Lo siguiente se dejo fuera a proposito:
-
-| Requisito | Por que |
-|---|---|
-| RF-17, lote por JSON | Solo se recibe el CSV. El JSON entraria por el mismo caso de uso (`ReconcileBatchUseCase`): faltan el endpoint y su DTO, no logica de negocio. |
-| RF-23, filtros por rango de vencimiento y de saldo | La consulta filtra por NIT y estado, con paginacion estable. Los rangos son condiciones extra en la misma consulta. |
-| RF-24 y RF-30, tablero de conciliacion | Es una consulta de lectura sobre datos que ya existen; no afecta la correccion de la conciliacion. |
-| RF-26, filtrar rechazos por motivo | El resultado se ve completo y paginado, con los rechazos resaltados en rojo y su motivo; falta el filtro. |
-| RF-26, avance del procesamiento | Se muestra un indicador de "procesando" con el tiempo transcurrido, no el avance linea a linea |
-| RF-22, descarga del resultado | El resultado si se puede consultar en cualquier momento (`GET /api/v1/batches/{id}/lines`); falta exportarlo a archivo. |
-| Paginacion de facturas | Solo "Primera" y "Siguiente"; sin total ni salto a una pagina (ver D-03). |
-| RF-15, usuario de auditoria | Usuario fijo `cartera`; la autenticacion esta fuera de alcance. |
-| Pruebas | Se probaron el dominio, el heredado y CF-03/CF-04 contra PostgreSQL real. Los demas casos frontera se verificaron a mano contra el sistema levantado. |
+| Requisito | Estado | Por que |
+|---|---|---|
+| RF-25 a RF-30, frontend | Pendiente de esta etapa | Se priorizo el backend: la correccion de la conciliacion (dinero, reenvios, concurrencia, zona horaria, volumen) es donde fallan estas aplicaciones en produccion. **Actualizar al cerrar el frontend.** |
+| RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: 7 s para 50.000 lineas. La pantalla solo puede mostrar "procesando" mientras espera la respuesta. |
+| RF-15, usuario de la auditoria | Usuario fijo `cartera` | La autenticacion esta fuera de alcance (seccion 1.2). El usuario se configura con `APP_USER`. |
+| Paginacion de facturas | Sin total ni salto a una pagina | Es el costo de la paginacion por cursor, que es la que garantiza PR-03 (D-03). |
+| Contrato del Anexo A | Rutas en ingles | Quien pruebe con las rutas sugeridas recibe 404; la equivalencia esta en D-05 y en el README. |
 
 ## Que esta mal o es fragil
 
-1. Mientras se procesa un lote grande, sus facturas quedan bloqueadas (~13-18 s con 50.000 lineas).
-   Otro lote que toque esas facturas espera.
-2. Si dos lotes distintos traen al mismo tiempo la misma referencia nueva, el segundo falla entero
-   con 409 y hay que reenviarlo.
-3. El lote completo se carga en memoria antes de procesarlo. Bien para 50.000 lineas, no para
-   millones.
-4. El primer arranque tarda ~1,5 min por la siembra de facturas; mientras tanto el frontend responde
-   502 en `/api`.
-5. El CSV se lee siempre como UTF-8. Si Tesoreria enviara un archivo en otra codificacion (por
-   ejemplo Windows-1252), las tildes y la enie llegarian como caracteres invalidos en vez de
-   rechazarse con un mensaje claro.
-6. Hasta un minuto despues de un lote grande, filtrar por varios estados a la vez puede pasar de
-   300 ms (PR-01), mientras PostgreSQL actualiza sus estadisticas.
+1. **Bloqueo durante un lote grande.** Mientras se procesa un lote, sus facturas quedan bloqueadas
+   hasta que termina (7 s con 50.000 lineas; 15 s con carga de consultas en paralelo). Otro lote que
+   toque esas facturas espera. Las consultas no esperan: leen la ultima version confirmada.
+2. **Referencia repetida en dos lotes concurrentes.** Si dos lotes a facturas distintas traen la misma
+   referencia nueva al mismo tiempo, el segundo se deshace entero y responde 409; hay que reenviarlo
+   (D-02). La referencia nunca se aplica dos veces, pero el reenvio queda en manos de Tesoreria.
+3. **Todo el lote en memoria.** Las lineas y su resultado se cargan completos antes de guardar. Esta
+   bien para el limite de 100.000 lineas; no para lotes de millones.
+4. **Tablero lento sin rango.** Sin filtro de vencimiento suma las 500.000 facturas: 229 ms (p50) y
+   409 ms (p95). Con un mes, 105 ms (D-07).
+5. **Textos recortados en la auditoria.** Una linea rechazada con una referencia de mas de 80
+   caracteres, una factura de mas de 30 o un detalle de mas de 300 se guarda recortada. Asi no tumba
+   el lote, pero el valor original completo no queda guardado.
+6. **La zona horaria original de la fecha de pago no se guarda.** La base guarda el instante: un pago
+   enviado como `00:00-05:00` se devuelve como `05:00Z`. Es el mismo instante, pero la pantalla tiene
+   que convertirlo a hora de Colombia para mostrarlo.
+7. **Archivos en otra codificacion.** El CSV se lee como UTF-8. Una linea con caracteres de otra
+   codificacion (por ejemplo una enie de Windows-1252) se rechaza sola con su motivo; si el archivo
+   entero viene en otra codificacion, se rechazan todas las lineas que tengan tildes.
+8. **Primer arranque.** La siembra de 500.000 facturas tarda entre uno y dos minutos; mientras tanto
+   el backend no responde.
+9. **Las pruebas de integracion necesitan Docker.** Sin Docker fallan (a proposito: no se saltan en
+   silencio).
 
 ## Que haria con dos dias mas
 
-1. El endpoint JSON y los filtros por rango (vencimiento y saldo), que reutilizan lo que ya existe.
-2. El tablero (RF-24/30), el filtro por motivo y la descarga del resultado (RF-22).
-3. Procesamiento en segundo plano con avance real (RF-26).
-4. Prueba de carga de la consulta de facturas con todas las combinaciones de filtros.
-5. Confirmar con Cartera las ambiguedades A-01 y A-02.
+1. Procesar los lotes en segundo plano, con un estado consultable y avance real (RF-26), sin bloquear
+   la peticion.
+2. Guardar los totales del tablero por mes y actualizarlos al aplicar cada lote, para que responda
+   igual de rapido con o sin rango (D-07).
+3. Guardar el valor original completo y la zona horaria de cada pago junto al valor normalizado.
+4. Una prueba de carga mas realista (k6 o Gatling) con lotes y consultas mezclados, en lugar de
+   `curl` en paralelo.
+5. Confirmar con Cartera las ambiguedades resueltas por supuesto: A-01 (orden), A-02 (la lectura de
+   "redondee a los centavos") y A-04 (pago tardio).

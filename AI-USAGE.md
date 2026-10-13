@@ -83,6 +83,14 @@ caso de prueba.
   que un rango de saldo angosto no cumplia PR-01 con diez clientes en paralelo (435 ms) y que el indice
   por saldo no bastaba por el plan generico de las consultas preparadas; lo diagnostico con
   `EXPLAIN ANALYZE` (D-06). Tambien escribio `InvoiceSearchServiceTest`.
+- **Medicion de PR-02:** la hice yo, sobre una base recien sembrada: el lote de 50.000 lineas tardo 7 s.
+- **Pruebas de integracion, descarga del resultado, detalle de factura, tablero y LIMITACIONES.md:**
+  los hizo el asistente. En las pruebas de integracion descarto la opcion `disabledWithoutDocker`
+  de la primera version, para que sin Docker fallen en lugar de saltarse en silencio. Al revisar la
+  limitacion de "una referencia repetida en dos lotes concurrentes" encontro que el caso respondia 500
+  y lo cambio por un 409 con un mensaje que dice que hacer; la prueba que lo cubre se ejecuto con un
+  contador temporal para confirmar que la carrera realmente ocurria (diez de diez rondas). Tambien
+  midio el tablero (D-07) y CF-08 recorriendo las 500.000 facturas mientras se aplicaba un lote.
 
 ## 2. Que se le corrigio a la salida
 

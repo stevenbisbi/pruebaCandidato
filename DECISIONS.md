@@ -161,10 +161,30 @@ fijo evita que dos lotes se esperen mutuamente.
 **Descartado:** bloqueo optimista con columna de version. Ante un conflicto obliga a reintentar el
 lote completo, caro con lotes de 50.000 lineas.
 
+**Referencia repetida en lotes concurrentes (RF-12).** Si dos lotes van a la misma factura, el
+bloqueo los ordena y el segundo ve la referencia ya aplicada. Si van a facturas distintas, ninguno
+ve la referencia del otro hasta que confirma, y el indice unico de V3 rechaza al segundo: su
+transaccion se deshace entera y la API responde 409 pidiendo reenviarlo; al reenviarlo, esa linea se
+rechaza como duplicada y el resto se aplica. La prueba de integracion lo repite diez veces: en las
+diez se dio la carrera y la referencia se aplico una sola vez.
+
+**Descartado:** bloquear tambien las referencias del lote antes de procesar (por ejemplo con un
+`advisory lock` por referencia). Evitaba el reenvio, pero suma 50.000 bloqueos por lote para un caso
+que exige que Tesoreria mande la misma referencia en dos lotes distintos casi al mismo tiempo.
+
 ### D-03. Paginacion por cursor (PR-03) — CF-08
 
 La pagina siguiente pide las facturas con numero mayor al ultimo visto (`WHERE number > ?`). El
 numero de una factura nunca cambia.
+
+**Que garantiza:** cada factura aparece una sola vez y en orden, aunque un lote cambie saldos y
+estados mientras se navega. Con un filtro por estado o por saldo, una factura que deja de cumplirlo
+a mitad del recorrido ya no aparece en las paginas siguientes: es el estado actual, no una omision.
+
+**Como se verifico (CF-08):** se recorrieron las 500.000 facturas, de 200 en 200, mientras se
+procesaba un lote de 50.000 pagos sobre facturas pendientes. Durante 15 s los dos corrieron a la vez:
+salieron las 500.000, sin repetidas y en orden. El mismo recorrido filtrando PENDIENTE tampoco
+repitio ninguna.
 
 **Descartado:** `LIMIT/OFFSET`. Si mientras se navega un lote cambia el estado de una factura y sale
 del filtro, las siguientes se corren una posicion y se omite una.
@@ -282,8 +302,26 @@ en dos lugares.
 menos de 20 ms: los vencimientos estan repartidos en 24 meses, asi que recorriendo por numero se
 juntan 50 resultados enseguida. Seria un indice mas que mantener sin una mejora medible.
 
-**Costo aceptado:** cada pago aplicado actualiza tambien el indice por saldo, lo que puede hacer mas
-lento el lote de 50.000 (PR-02). Pendiente de medir sobre una base recien sembrada.
+**Costo aceptado:** cada pago aplicado actualiza tambien el indice por saldo, lo que hace un poco mas
+lento el lote de 50.000. Medido sobre una base recien sembrada y con el indice: 7 s, contra un limite
+de 60 s (PR-02). Con dos recorridos completos de la paginacion compitiendo al mismo tiempo, 15 s.
+
+### D-07. Tablero de conciliacion sin indice por vencimiento (RF-24)
+
+El tablero suma las facturas del rango de vencimiento y los pagos dirigidos a ellas, en una sola
+transaccion REPEATABLE READ para que las tres cifras salgan de la misma foto de la base aunque un
+lote se este aplicando.
+
+**Medido** con las 500.000 facturas: un mes, 105 ms (p50) y 123 ms (p95); un ano, 174 y 224 ms; sin
+rango, 229 y 409 ms. Sin rango recorre la tabla entera, porque suma todas las facturas.
+
+**Decision:** dejarlo asi. PR-01 se refiere a la consulta de facturas (RF-23), no al tablero, y la
+pantalla del tablero se abre con un rango.
+
+**Descartado:** un indice por fecha de vencimiento. Bajaria el caso de un mes, pero cuando un pago
+cambia el estado de una factura PostgreSQL actualiza todos sus indices, asi que hace mas lento el lote
+de 50.000 (PR-02), que si es un presupuesto. La alternativa para un tablero mas rapido seria guardar
+los totales por mes y actualizarlos al aplicar cada lote; queda en LIMITACIONES.md.
 
 ## 3. Casos frontera (Anexo B)
 
@@ -291,9 +329,9 @@ lento el lote de 50.000 (PR-02). Pendiente de medir sobre una base recien sembra
 |---|---|---|
 | CF-01 | Se aplica. El saldo a pagar queda en 0: PAGADA, con ajuste por redondeo de 0,40 en la auditoria. | A-02 |
 | CF-02 | Se rechaza completo por exceder el saldo a pagar (37.500.483). El saldo no cambia (RF-11). | A-02 |
-| CF-03 | El segundo envio devuelve el resultado original; los saldos quedan identicos. | A-06, A-07 |
-| CF-04 | Los lotes se serializan sobre la factura; lo aplicado nunca supera el saldo original. | D-02 |
+| CF-03 | El segundo envio devuelve el resultado original (200, `replayed`) y los saldos quedan identicos. Probado tambien con cuatro reenvios simultaneos: se aplica una sola vez (`BatchProcessingIntegrationTest`). | A-06, A-07 |
+| CF-04 | Los lotes se serializan sobre cada factura; lo aplicado nunca supera el saldo original. Probado con dos lotes concurrentes sobre 30 facturas en orden inverso: sin bloqueos mutuos y un solo pago aplicado por factura (`BatchProcessingIntegrationTest`). | D-02 |
 | CF-05 | PAGADA, no extemporanea: 23:30 en Colombia es antes del fin del dia de vencimiento. | A-03 |
 | CF-06 | A se aplica (saldo 40); B se rechaza por exceder el saldo. | A-01 |
-| CF-07 | Pendiente de medir. | — |
-| CF-08 | No se repiten ni se omiten facturas. Verificado sin lotes en curso: 8.742 facturas recorridas en 44 paginas, igual al conteo en SQL, sin repetidas. Falta repetirlo mientras se procesa un lote. | D-03 |
+| CF-07 | 50.000 lineas en 7 s sobre una base recien sembrada (limite PR-02: 60 s): 41.067 aplicadas y 8.933 rechazadas, cada una con su motivo. | D-06 |
+| CF-08 | No se repiten ni se omiten facturas. Verificado recorriendo las 500.000 mientras se aplicaba un lote de 50.000 pagos. | D-03 |

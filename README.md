@@ -54,16 +54,17 @@ si son los del Anexo A.
 | POST | `/api/v1/batches/file` | Lote CSV (multipart, campo `file`; `id` y `source` opcionales). Mismas respuestas que el JSON. | Implementado |
 | GET | `/api/v1/batches/{id}` | Resumen del lote. 404 si no existe. | Implementado |
 | GET | `/api/v1/batches/{id}/lines` | Resultado linea por linea, paginado (`page` desde 0, `size` hasta 500) y filtrable por `outcome` (`APLICADO`, `RECHAZADO`) y `reason` (motivo de rechazo). | Implementado |
-| GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV (RF-22). | Definido, sin implementar |
+| GET | `/api/v1/batches/{id}/download` | Resultado completo en CSV con separador `;` (RF-22). 404 si el lote no existe. | Implementado |
 | GET | `/api/v1/invoices` | Consulta de facturas por cursor (RF-23). Filtros combinables: `nit`, `status` (repetible), `dueFrom` y `dueTo` (AAAA-MM-DD), `minBalance` y `maxBalance`. Paginacion: `size` (50 por defecto, hasta 200) y `cursor` (el `nextCursor` de la pagina anterior). | Implementado |
-| GET | `/api/v1/invoices/{id}` | Detalle de una factura. | Definido, sin implementar |
-| GET | `/api/v1/conciliation` | Tablero de conciliacion (RF-24). | Definido, sin implementar |
+| GET | `/api/v1/invoices/{id}` | Una factura y todos los pagos que recibio, aplicados y rechazados, con su auditoria. 404 si no existe. | Implementado |
+| GET | `/api/v1/conciliation` | Tablero de conciliacion (RF-24): totales del rango de vencimiento (`dueFrom`, `dueTo`, opcionales) y los diez proveedores con mayor saldo pendiente. | Implementado |
 
 Todos los montos viajan como texto decimal (`"37500483.40"`), nunca como numero JSON.
 
 ## Pruebas
 
-Backend (JUnit 5; las de integracion usan Testcontainers y se omiten si no hay Docker):
+Backend (JUnit 5). Las pruebas de integracion levantan un PostgreSQL 16 con Testcontainers, asi que
+necesitan Docker corriendo: sin Docker fallan, no se saltan en silencio.
 
 ```bash
 cd backend/pagos && ./mvnw test
@@ -79,6 +80,11 @@ cd frontend && npm ci && npm test
 |---|---|
 | `ImportadorCsvLegacyCharacterizationTest` | Comportamiento actual del importador heredado, defectos incluidos. |
 | `CsvBatchReaderTest` | Los mismos archivos con el lector que lo reemplaza. |
+| `InvoiceTest` | Redondeo al peso (CF-01, CF-02, sobrepago de medio peso), pago tardio (CF-05, A-04), reglas del constructor. |
+| `BatchReconcilerTest` | Aplicacion linea por linea: CF-06 en los dos ordenes, decimales, fechas, referencias duplicadas, textos largos. |
+| `BatchProcessingIntegrationTest` | Contra PostgreSQL real: CF-03 (con reenvios simultaneos), CF-04 (lotes concurrentes), conflicto A-07, referencia repetida en lotes concurrentes, auditoria. |
+| `DashboardIntegrationTest` | Cifras del tablero (RF-24, A-08) contra PostgreSQL real. |
+| `*ServiceTest`, `BatchResultCsvWriterTest` | Validaciones de los casos de uso y formato del CSV de descarga. |
 | `money.test.ts` | Formato colombiano sin perdida de precision (incluye montos > 2^53). |
 | `pages.test.tsx` | Vista reconstruida desde la URL, estados vacio/error, doble clic (RF-27). |
 
