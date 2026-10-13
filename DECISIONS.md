@@ -46,7 +46,9 @@ centavos** (`RoundingMode.FLOOR`).
 **Descartado 1:** redondear el saldo al peso mas cercano (`HALF_UP`). Fue la primera regla adoptada,
 y la medicion con el lote de 50.000 la descarto: de 16.418 pagos con los que Tesoreria salda una
 factura con centavos, los 8.259 cuyos centavos eran 0,50 o mas dejaban la factura PARCIAL con un saldo
-de 0,50 a 0,99, esperando un pago de un peso que Tesoreria no envia. Son justamente las diferencias que
+de 0,50 a 0,99, esperando un pago de un peso que Tesoreria no envia. Con la regla adoptada, al cargar
+el mismo lote las 16.418 quedan saldadas, ninguna queda con saldo menor a un peso, y lo condonado en
+todo el lote suma 8.166,14 pesos. Son justamente las diferencias que
 el sistema debe evitar que aparezcan al cierre de mes. Ademas permitia pagar hasta 0,50 de mas.
 
 **Descartado 2:** redondear a dos decimales y comparar exacto (lectura literal de la respuesta). Una
@@ -355,8 +357,8 @@ menos de 20 ms: los vencimientos estan repartidos en 24 meses, asi que recorrien
 juntan 50 resultados enseguida. Seria un indice mas que mantener sin una mejora medible.
 
 **Costo aceptado:** cada pago aplicado actualiza tambien el indice por saldo, lo que hace un poco mas
-lento el lote de 50.000. Medido sobre una base recien sembrada y con el indice: 7 s, contra un limite
-de 60 s (PR-02). Con dos recorridos completos de la paginacion compitiendo al mismo tiempo, 15 s.
+lento el lote de 50.000. Medido sobre una base recien sembrada y con el indice: entre 7 y 10 s (10 s
+cuando es el primer lote despues de arrancar el backend), contra un limite de 60 s (PR-02). Con dos recorridos completos de la paginacion compitiendo al mismo tiempo, 15 s.
 
 ### D-07. Tablero de conciliacion sin indice por vencimiento (RF-24)
 
@@ -415,7 +417,7 @@ Tesoreria procesa el lote desde cero.
 
 **Descartado:** procesar el lote en segundo plano y que la pantalla consulte el avance. Mostraria un
 avance real (RF-26), pero exige guardar lotes a medio procesar y decidir que pasa con ellos si el
-servidor se cae. Con 7 s para el lote mas grande (CF-07), la espera dentro de la peticion es
+servidor se cae. Con 7 a 10 s para el lote mas grande (CF-07), la espera dentro de la peticion es
 razonable.
 
 **Costo aceptado:** no hay avance linea a linea (la pantalla muestra el tiempo transcurrido), y las
@@ -444,5 +446,5 @@ lote usan la llave primaria y las consultas por factura, el indice de V7.
 | CF-04 | Los lotes se serializan sobre cada factura; lo aplicado nunca supera el saldo original. Probado con dos lotes concurrentes sobre 30 facturas en orden inverso: sin bloqueos mutuos y un solo pago aplicado por factura (`BatchProcessingIntegrationTest`). | D-02 |
 | CF-05 | PAGADA, no extemporanea: 23:30 en Colombia es antes del fin del dia de vencimiento. | A-03 |
 | CF-06 | A se aplica (saldo 40); B se rechaza por exceder el saldo. | A-01 |
-| CF-07 | 50.000 lineas en 7 s sobre una base recien sembrada (limite PR-02: 60 s): 41.067 aplicadas y 8.933 rechazadas, cada una con su motivo. | D-06 |
+| CF-07 | 50.000 lineas en 7 a 10 s sobre una base recien sembrada (limite PR-02: 60 s): 41.068 aplicadas y 8.932 rechazadas (6.425 por exceder el saldo y 2.507 por factura inexistente), cada una con su motivo. Ninguna factura queda con saldo menor a un peso. | D-06, A-02 |
 | CF-08 | No se repiten ni se omiten facturas. Verificado recorriendo las 500.000 mientras se aplicaba un lote de 50.000 pagos. | D-03 |

@@ -15,12 +15,17 @@ Requisito unico: Docker (con Docker Compose v2).
 docker compose up
 ```
 
-El primer arranque compila backend y frontend dentro de los contenedores y siembra las 500.000
-facturas (la migracion de semilla tarda alrededor de 1 a 2 minutos). Mientras el backend no termina
-de arrancar, el frontend responde, pero las consultas devuelven error 502. Arranques posteriores
-reutilizan el volumen `db-data` y son inmediatos.
+La primera vez, Docker compila el backend y el frontend dentro de los contenedores (varios minutos:
+descarga las dependencias de Maven y npm). Despues el backend aplica las migraciones y siembra las
+500.000 facturas: unos 40 s hasta que responde. Mientras tanto la pantalla abre y muestra que el
+servidor todavia no esta disponible. Los arranques siguientes reutilizan el volumen `db-data` y el
+backend responde en pocos segundos.
 
-Para empezar de cero (borra la base): `docker compose down -v`.
+Para empezar de cero, con las facturas recien sembradas y sin ningun lote (borra la base):
+
+```bash
+docker compose down -v
+```
 
 | Servicio | Puerto | URL |
 |---|---|---|
@@ -37,7 +42,7 @@ la URL (RF-25).
 
 | Ruta | Que muestra |
 |---|---|
-| `/facturas` | Consulta de facturas con filtros por NIT, estado, rango de vencimiento y rango de saldo (RF-23), paginada por cursor. |
+| `/facturas` | Consulta de facturas con filtros por NIT, estado, rango de vencimiento y rango de saldo (RF-23). Paginacion numerada con salto a la ultima pagina; "Siguiente" avanza por cursor (D-03). |
 | `/facturas/{numero}` | Detalle de una factura y todos los pagos que recibio, con su auditoria. |
 | `/lotes` | Carga de un lote por archivo CSV o pegando el JSON (RF-26), y su resultado linea por linea filtrable por resultado y motivo, con descarga en CSV. |
 | `/tablero` | Tablero de conciliacion (RF-24, RF-30). Abre con el mes actual; "Todas" cubre todas las facturas. |
@@ -52,7 +57,8 @@ la URL (RF-25).
 curl -F "file=@seed/out/lote-50k.csv" http://localhost:8080/api/v1/batches/file
 ```
 
-Los casos del Anexo B estan en `seed/out/casos/`. Se pueden subir en orden desde la UI o con curl.
+Los casos del Anexo B estan en `seed/out/casos/` (`cf-01-...csv` a `cf-06-...csv`). Se pueden subir
+desde la pantalla o con curl; el resultado esperado de cada uno esta en DECISIONS.md, seccion 3.
 
 ## API
 
@@ -76,14 +82,19 @@ Todos los montos viajan como texto decimal (`"37500483.40"`), nunca como numero 
 
 ## Pruebas
 
-Backend (JUnit 5). Las pruebas de integracion levantan un PostgreSQL 16 con Testcontainers, asi que
-necesitan Docker corriendo: sin Docker fallan, no se saltan en silencio.
+Para levantar el sistema basta Docker; para correr las pruebas fuera de Docker hace falta, ademas:
+
+- **Backend (JUnit 5):** JDK 21. Maven no hace falta: el wrapper `mvnw` lo descarga. Las pruebas de
+  integracion levantan un PostgreSQL 16 con Testcontainers, asi que necesitan Docker corriendo: sin
+  Docker fallan, no se saltan en silencio.
+- **Frontend (Vitest + Testing Library):** Node 22. `npm ci` instala exactamente las versiones de
+  `package-lock.json`.
 
 ```bash
 cd backend/pagos && ./mvnw test
 ```
 
-Frontend (Vitest + Testing Library):
+En PowerShell: `cd backend/pagos; .\mvnw.cmd test`.
 
 ```bash
 cd frontend && npm ci && npm test

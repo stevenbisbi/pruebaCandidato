@@ -4,7 +4,7 @@
 
 | Requisito | Estado | Por que |
 |---|---|---|
-| RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: 7 s para 50.000 lineas. La pantalla muestra una barra indeterminada y los segundos transcurridos mientras espera la respuesta. |
+| RF-26, avance del procesamiento | No hay avance linea a linea | El lote se procesa dentro de la peticion, en una sola transaccion: de 7 a 10 s para 50.000 lineas. La pantalla muestra una barra indeterminada y los segundos transcurridos mientras espera la respuesta. |
 | RF-15, usuario de la auditoria | Usuario fijo `cartera` | La autenticacion esta fuera de alcance (seccion 1.2). El usuario se configura con `APP_USER`. |
 | Paginacion de facturas | Saltos lentos al medio con carga | Saltar a una pagina del medio (la 5.000 de 10.000) tarda 151 ms con un usuario y 607 ms en el p95 con diez en paralelo: OFFSET recorre las filas anteriores (D-03). Avanzar, la primera y la ultima pagina siguen por debajo de 45 ms. |
 | Contrato del Anexo A | Rutas en ingles | Quien pruebe con las rutas sugeridas recibe 404; la equivalencia esta en D-05 y en el README. |
@@ -13,7 +13,7 @@
 ## Que esta mal o es fragil
 
 1. **Bloqueo durante un lote grande.** Mientras se procesa un lote, sus facturas quedan bloqueadas
-   hasta que termina (7 s con 50.000 lineas; 15 s con carga de consultas en paralelo). Otro lote que
+   hasta que termina (de 7 a 10 s con 50.000 lineas; 15 s con carga de consultas en paralelo). Otro lote que
    toque esas facturas espera. Las consultas no esperan: leen la ultima version confirmada.
 2. **Referencia repetida en dos lotes concurrentes.** Si dos lotes a facturas distintas traen la misma
    referencia nueva al mismo tiempo, el segundo se deshace entero y responde 409; hay que reenviarlo
