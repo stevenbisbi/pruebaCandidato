@@ -25,6 +25,12 @@ export const api = createApi({
       query: (queryString) => withQuery('/invoices', queryString),
       providesTags: ['Invoices'],
     }),
+    // GET /invoices/count?nit=...&status=... Solo depende de los filtros: se cuenta una vez por
+    // combinacion de filtros y no en cada pagina. Procesar un lote lo invalida, como a las facturas.
+    countInvoices: build.query<{ totalItems: number }, string>({
+      query: (queryString) => withQuery('/invoices/count', queryString),
+      providesTags: ['Invoices'],
+    }),
     // GET /invoices/{numero}
     getInvoice: build.query<InvoiceDetail, string>({
       query: (number) => `/invoices/${encodeURIComponent(number)}`,
@@ -65,6 +71,7 @@ export const api = createApi({
 
 export const {
   useSearchInvoicesQuery,
+  useCountInvoicesQuery,
   useGetInvoiceQuery,
   useGetBatchQuery,
   useGetBatchLinesQuery,

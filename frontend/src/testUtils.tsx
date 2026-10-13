@@ -37,6 +37,11 @@ export function calledUrl(spy: ReturnType<typeof mockFetch>, n = 0): URL {
   return urlOf(calls[n < 0 ? calls.length + n : n][0])
 }
 
+/** La URL de la ultima llamada a fetch con exactamente esa ruta, o undefined si no hubo ninguna. */
+export function lastCallTo(spy: ReturnType<typeof mockFetch>, pathname: string): URL | undefined {
+  return spy.mock.calls.map((call) => urlOf(call[0])).filter((url) => url.pathname === pathname).at(-1)
+}
+
 /** Pone la URL del navegador como si el usuario hubiera abierto o pegado ese enlace. */
 export function openUrl(path: string) {
   window.history.replaceState(null, '', path)

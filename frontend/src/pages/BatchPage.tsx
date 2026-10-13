@@ -4,6 +4,7 @@ import { errorMessage } from '../api/errors'
 import { batchDownloadUrl } from '../api/query'
 import { LINE_OUTCOMES, REJECTION_REASONS, type BatchSummary } from '../api/types'
 import { Link } from '../components/Link'
+import { Pagination } from '../components/Pagination'
 import { QueryState } from '../components/QueryState'
 import { StatusBadge } from '../components/StatusBadge'
 import { Button, Card, INPUT_CLASS, LABEL_CLASS, Stat, TD_CLASS, TH_CLASS } from '../components/ui'
@@ -231,11 +232,12 @@ function BatchResult({ id }: { id: string }) {
   const [params, setParams] = useUrlParams()
   const outcome = params.get('outcome')
   const reason = params.get('reason')
-  const page = Math.max(0, Number(params.get('page') ?? '0') || 0)
+  // En la URL la pagina empieza en 1, como en facturas; la API cuenta desde 0.
+  const page = Math.max(1, Number(params.get('page')) || 1)
 
   const summary = useGetBatchQuery(id)
 
-  const lineQuery = new URLSearchParams({ page: String(page), size: String(PAGE_SIZE) })
+  const lineQuery = new URLSearchParams({ page: String(page - 1), size: String(PAGE_SIZE) })
   if (outcome) {
     lineQuery.set('outcome', outcome)
   }
@@ -356,15 +358,16 @@ function BatchResult({ id }: { id: string }) {
                 </tbody>
               </table>
             </div>
-            <nav className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-              <Button disabled={page === 0} onClick={() => setParams({ page: page - 1 === 0 ? null : String(page - 1) })}>« Anterior</Button>
-              <span className="text-slate-600">
-                Pagina {page + 1} de {formatCount(totalPages)} · {formatCount(lines.data?.totalItems ?? 0)} lineas
-              </span>
-              <Button disabled={!lines.data?.hasNext || lines.isFetching} onClick={() => setParams({ page: String(page + 1) })}>
-                Siguiente »
-              </Button>
-            </nav>
+            <div className="mt-3">
+              <Pagination
+                page={Math.min(page, totalPages)}
+                totalPages={totalPages}
+                totalItems={lines.data?.totalItems ?? 0}
+                itemLabel="lineas"
+                onPageChange={(target) => setParams({ page: target <= 1 ? null : String(target) })}
+                disabled={lines.isFetching}
+              />
+            </div>
           </QueryState>
         </Card>
       )}

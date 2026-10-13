@@ -1,8 +1,11 @@
 /** Prefijo de la API. En Docker nginx lo redirige al backend; en desarrollo lo hace Vite (vite.config.ts). */
 export const API_BASE = '/api/v1'
 
-/** Parametros de la consulta de facturas que acepta la API (RF-23). Tienen el mismo nombre en la URL de la pantalla. */
-export const INVOICE_QUERY_KEYS = ['nit', 'status', 'dueFrom', 'dueTo', 'minBalance', 'maxBalance', 'cursor', 'size'] as const
+/** Filtros de la consulta de facturas (RF-23). Tienen el mismo nombre en la URL de la pantalla y en la API. */
+export const INVOICE_FILTER_KEYS = ['nit', 'status', 'dueFrom', 'dueTo', 'minBalance', 'maxBalance'] as const
+
+/** Los filtros mas la paginacion: tamano, cursor (pagina siguiente) y numero de pagina (salto directo). */
+export const INVOICE_QUERY_KEYS = [...INVOICE_FILTER_KEYS, 'size', 'cursor', 'page'] as const
 
 /** Copia de params solo los parametros que entiende un endpoint, para no enviar basura de la URL. */
 export function pick(params: URLSearchParams, keys: readonly string[]): URLSearchParams {

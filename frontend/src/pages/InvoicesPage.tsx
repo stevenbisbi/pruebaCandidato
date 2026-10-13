@@ -1,9 +1,10 @@
 import type { FormEvent } from 'react'
-import { useSearchInvoicesQuery } from '../api/api'
+import { useCountInvoicesQuery, useSearchInvoicesQuery } from '../api/api'
 import { errorMessage } from '../api/errors'
-import { INVOICE_QUERY_KEYS, pick } from '../api/query'
+import { INVOICE_FILTER_KEYS, INVOICE_QUERY_KEYS, pick } from '../api/query'
 import { INVOICE_STATUSES } from '../api/types'
 import { Link } from '../components/Link'
+import { Pagination } from '../components/Pagination'
 import { QueryState } from '../components/QueryState'
 import { StatusBadge } from '../components/StatusBadge'
 import { Button, INPUT_CLASS, LABEL_CLASS, TD_CLASS, TH_CLASS } from '../components/ui'
@@ -12,20 +13,44 @@ import { formatCop } from '../lib/money'
 import { useUrlParams } from '../lib/router'
 
 const PAGE_SIZES = ['50', '100', '200']
-const FILTER_KEYS = ['nit', 'status', 'dueFrom', 'dueTo', 'minBalance', 'maxBalance']
+const DEFAULT_PAGE_SIZE = 50
 const AMOUNT_PATTERN = '\\d+(\\.\\d{1,2})?'
 
 /**
- * Consulta de facturas (RF-23, RF-25). Los filtros, el tamano de pagina y el cursor viven en la URL
- * con los mismos nombres que usa la API: la consulta se arma directamente desde la URL, asi que
- * pegar el enlace en otra pestana reproduce exactamente la misma vista.
+ * Consulta de facturas (RF-23, RF-25). Los filtros, el tamano de pagina, la pagina y el cursor viven
+ * en la URL con los mismos nombres que usa la API: la consulta se arma directamente desde la URL, asi
+ * que pegar el enlace en otra pestana reproduce exactamente la misma vista.
+ *
+ * Paginacion (D-03): "Siguiente" avanza con el cursor, que es estable aunque un lote cambie facturas
+ * mientras se navega (PR-03). Los numeros, "Anterior" y "Ultima" saltan directo a una pagina.
  */
 export function InvoicesPage() {
   const [params, setParams] = useUrlParams()
   // Mientras llega la pagina nueva, RTK Query deja en data la anterior: la tabla no salta al paginar.
   const result = useSearchInvoicesQuery(pick(params, INVOICE_QUERY_KEYS).toString())
+  // El total solo depende de los filtros: RTK Query lo guarda y no lo vuelve a pedir al paginar.
+  const count = useCountInvoicesQuery(pick(params, INVOICE_FILTER_KEYS).toString())
   const selectedStatuses = params.getAll('status')
-  const filtered = FILTER_KEYS.some((filterKey) => params.has(filterKey))
+  const filtered = INVOICE_FILTER_KEYS.some((filterKey) => params.has(filterKey))
+
+  const size = Number(params.get('size')) || DEFAULT_PAGE_SIZE
+  const totalItems = count.data?.totalItems
+  const totalPages = totalItems === undefined ? undefined : Math.max(1, Math.ceil(totalItems / size))
+  // Una pagina mas alla del final (un enlace viejo, filtros que cambiaron) se muestra como la ultima.
+  const page = Math.min(Math.max(1, Number(params.get('page')) || 1), totalPages ?? Number.MAX_SAFE_INTEGER)
+
+  function goToPage(target: number) {
+    setParams({ page: target <= 1 ? null : String(target), cursor: null })
+  }
+
+  function nextPage() {
+    const nextCursor = result.data?.nextCursor
+    if (nextCursor) {
+      setParams({ cursor: nextCursor, page: String(page + 1) })
+    } else {
+      goToPage(page + 1)
+    }
+  }
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -38,13 +63,14 @@ export function InvoicesPage() {
       dueTo: text('dueTo'),
       minBalance: text('minBalance'),
       maxBalance: text('maxBalance'),
-      size: text('size') === '50' ? null : text('size'),
+      size: text('size') === String(DEFAULT_PAGE_SIZE) ? null : text('size'),
       cursor: null,
+      page: null,
     })
   }
 
   function clearFilters() {
-    setParams(Object.fromEntries([...FILTER_KEYS, 'cursor'].map((filterKey) => [filterKey, null])))
+    setParams(Object.fromEntries([...INVOICE_FILTER_KEYS, 'cursor', 'page'].map((filterKey) => [filterKey, null])))
   }
 
   const invoices = result.data?.items ?? []
@@ -159,24 +185,19 @@ export function InvoicesPage() {
         </div>
       </QueryState>
 
-      {/*
-        Paginacion por cursor (D-03): "Siguiente" pide las facturas despues de la ultima que se ve.
-        No hay total ni salto a la pagina N; el boton atras del navegador vuelve a la pagina anterior.
-      */}
-      <nav className="flex flex-wrap items-center gap-3 text-sm">
-        <Button disabled={!params.get('cursor')} onClick={() => setParams({ cursor: null })}>« Primera pagina</Button>
-        <Button
-          disabled={!result.data?.hasNext || result.isFetching}
-          onClick={() => setParams({ cursor: result.data?.nextCursor ?? null })}
-        >
-          Siguiente »
-        </Button>
-        {result.data && invoices.length > 0 && (
-          <span className="text-slate-600">
-            {invoices[0].number} a {invoices[invoices.length - 1].number}
-          </span>
-        )}
-      </nav>
+      {totalPages === undefined ? (
+        <p className="text-sm text-slate-500">{count.error ? errorMessage(count.error) : 'Contando facturas…'}</p>
+      ) : (
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={totalItems ?? 0}
+          itemLabel={totalItems === 1 ? 'factura' : 'facturas'}
+          onPageChange={goToPage}
+          onNext={nextPage}
+          disabled={result.isFetching}
+        />
+      )}
     </div>
   )
 }

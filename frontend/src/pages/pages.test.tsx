@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BatchSummary, CursorPage, Dashboard, Invoice, LineResult, Page } from '../api/types'
-import { calledUrl, jsonResponse, mockFetch, openUrl, renderWithStore } from '../testUtils'
+import { calledUrl, jsonResponse, lastCallTo, mockFetch, openUrl, renderWithStore } from '../testUtils'
 import { BatchPage } from './BatchPage'
 import { DashboardPage } from './DashboardPage'
 import { InvoicesPage } from './InvoicesPage'
@@ -23,31 +23,43 @@ function invoicePage(items: Invoice[], nextCursor: string | null = null): Cursor
   return { items, size: items.length, nextCursor, hasNext: nextCursor !== null }
 }
 
+/** Responde como el backend: la consulta de facturas y su conteo. */
+function invoicesApi(page: CursorPage<Invoice>, totalItems: number) {
+  return mockFetch((url) =>
+    url.pathname === '/api/v1/invoices/count' ? jsonResponse({ totalItems }) : jsonResponse(page))
+}
+
 describe('InvoicesPage', () => {
   it('arma la consulta desde la URL compartida, con todos los filtros (RF-25)', async () => {
-    openUrl('/facturas?nit=800404150-7&status=PARCIAL&status=PAGADA&dueFrom=2026-03-01&dueTo=2026-03-31&minBalance=1000&maxBalance=2000&cursor=FV-1&otro=x')
-    const fetchSpy = mockFetch(() => jsonResponse(invoicePage([INVOICE])))
+    openUrl('/facturas?nit=800404150-7&status=PARCIAL&status=PAGADA&dueFrom=2026-03-01&dueTo=2026-03-31&minBalance=1000&maxBalance=2000&cursor=FV-1&page=3&otro=x')
+    const fetchSpy = invoicesApi(invoicePage([INVOICE]), 500)
 
     renderWithStore(<InvoicesPage />)
 
     await screen.findByText('FV-0042199')
-    const url = calledUrl(fetchSpy)
-    expect(url.pathname).toBe('/api/v1/invoices')
+    const url = lastCallTo(fetchSpy, '/api/v1/invoices')!
     expect(url.searchParams.get('nit')).toBe('800404150-7')
     expect(url.searchParams.getAll('status')).toEqual(['PARCIAL', 'PAGADA'])
     expect(url.searchParams.get('dueFrom')).toBe('2026-03-01')
     expect(url.searchParams.get('maxBalance')).toBe('2000')
     expect(url.searchParams.get('cursor')).toBe('FV-1')
+    expect(url.searchParams.get('page')).toBe('3')
     // Un parametro que la API no entiende no se le envia.
     expect(url.searchParams.has('otro')).toBe(false)
-    // El formulario muestra lo mismo que la URL.
+    // El conteo usa solo los filtros: no cambia al paginar.
+    const count = lastCallTo(fetchSpy, '/api/v1/invoices/count')!
+    expect(count.searchParams.get('nit')).toBe('800404150-7')
+    expect(count.searchParams.has('cursor')).toBe(false)
+    expect(count.searchParams.has('page')).toBe(false)
+    // El formulario y la paginacion muestran lo mismo que la URL.
     expect(screen.getByLabelText('NIT del proveedor')).toHaveValue('800404150-7')
     expect(screen.getByLabelText('Parcial')).toBeChecked()
+    expect(await screen.findByText(/Pagina 3 de 10/)).toBeInTheDocument()
   })
 
   it('muestra los montos en formato colombiano sin perder precision (RF-28)', async () => {
     openUrl('/facturas')
-    mockFetch(() => jsonResponse(invoicePage([INVOICE])))
+    invoicesApi(invoicePage([INVOICE]), 1)
 
     renderWithStore(<InvoicesPage />)
 
@@ -56,8 +68,8 @@ describe('InvoicesPage', () => {
   })
 
   it('al filtrar escribe los filtros en la URL y vuelve a la primera pagina', async () => {
-    openUrl('/facturas?cursor=FV-9')
-    const fetchSpy = mockFetch(() => jsonResponse(invoicePage([INVOICE])))
+    openUrl('/facturas?cursor=FV-9&page=4')
+    const fetchSpy = invoicesApi(invoicePage([INVOICE]), 500)
     renderWithStore(<InvoicesPage />)
     await screen.findByText('FV-0042199')
 
@@ -69,24 +81,46 @@ describe('InvoicesPage', () => {
     expect(params.get('nit')).toBe('900123')
     expect(params.getAll('status')).toEqual(['PENDIENTE'])
     expect(params.has('cursor')).toBe(false)
-    await waitFor(() => expect(calledUrl(fetchSpy, -1).searchParams.get('nit')).toBe('900123'))
+    expect(params.has('page')).toBe(false)
+    await waitFor(() => expect(lastCallTo(fetchSpy, '/api/v1/invoices')!.searchParams.get('nit')).toBe('900123'))
   })
 
-  it('"Siguiente" pide la pagina con el cursor que devolvio la API (PR-03)', async () => {
+  it('numera las paginas segun el total y deja ir a la ultima', async () => {
     openUrl('/facturas')
-    const fetchSpy = mockFetch(() => jsonResponse(invoicePage([INVOICE], 'FV-0042199')))
+    const fetchSpy = invoicesApi(invoicePage([INVOICE], 'FV-0042199'), 230)
     renderWithStore(<InvoicesPage />)
-    await screen.findByText('FV-0042199')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Siguiente »' }))
+    // 230 facturas de 50 en 50: 5 paginas.
+    expect(await screen.findByText(/Pagina 1 de 5 · 230 facturas/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pagina 5' })).toBeInTheDocument()
 
-    expect(new URLSearchParams(window.location.search).get('cursor')).toBe('FV-0042199')
-    await waitFor(() => expect(calledUrl(fetchSpy, 1).searchParams.get('cursor')).toBe('FV-0042199'))
+    fireEvent.click(screen.getByRole('button', { name: 'Ultima pagina' }))
+
+    // El salto va por numero de pagina, sin cursor.
+    expect(new URLSearchParams(window.location.search).get('page')).toBe('5')
+    await waitFor(() => expect(lastCallTo(fetchSpy, '/api/v1/invoices')!.searchParams.get('page')).toBe('5'))
+    expect(lastCallTo(fetchSpy, '/api/v1/invoices')!.searchParams.has('cursor')).toBe(false)
+  })
+
+  it('"Siguiente" avanza con el cursor que devolvio la API (PR-03)', async () => {
+    openUrl('/facturas')
+    const fetchSpy = invoicesApi(invoicePage([INVOICE], 'FV-0042199'), 230)
+    renderWithStore(<InvoicesPage />)
+    await screen.findByText(/Pagina 1 de 5/)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pagina siguiente' }))
+
+    const params = new URLSearchParams(window.location.search)
+    expect(params.get('cursor')).toBe('FV-0042199')
+    expect(params.get('page')).toBe('2')
+    await waitFor(() => expect(lastCallTo(fetchSpy, '/api/v1/invoices')!.searchParams.get('cursor')).toBe('FV-0042199'))
+    // Cambiar de pagina no vuelve a contar: el total sigue en cache.
+    expect(fetchSpy.mock.calls.filter((_, i) => calledUrl(fetchSpy, i).pathname === '/api/v1/invoices/count')).toHaveLength(1)
   })
 
   it('resuelve el estado vacio de forma explicita (RF-29)', async () => {
     openUrl('/facturas')
-    mockFetch(() => jsonResponse(invoicePage([])))
+    invoicesApi(invoicePage([]), 0)
 
     renderWithStore(<InvoicesPage />)
 
@@ -100,7 +134,7 @@ describe('InvoicesPage', () => {
 
     renderWithStore(<InvoicesPage />)
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('El vencimiento desde no puede ser posterior')
+    expect((await screen.findAllByRole('alert'))[0]).toHaveTextContent('El vencimiento desde no puede ser posterior')
   })
 })
 
@@ -201,6 +235,9 @@ describe('BatchPage', () => {
   it('al procesar un lote, las facturas en pantalla se vuelven a consultar (invalidacion de RTK Query)', async () => {
     openUrl('/facturas')
     const fetchSpy = mockFetch((url, method) => {
+      if (url.pathname === '/api/v1/invoices/count') {
+        return jsonResponse({ totalItems: 1 })
+      }
       if (url.pathname === '/api/v1/invoices') {
         return jsonResponse(invoicePage([INVOICE]))
       }
