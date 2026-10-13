@@ -5,16 +5,25 @@ interface Props {
   error: string
   isEmpty: boolean
   emptyMessage?: string
+  loadingMessage?: string
   onRetry?: () => void
   children: ReactNode
 }
 
 /** Resuelve de forma explicita carga, error y vacio para toda vista que consulta datos (RF-29). */
-export function QueryState({ isLoading, error, isEmpty, emptyMessage = 'No hay resultados.', onRetry, children }: Props) {
+export function QueryState({
+  isLoading,
+  error,
+  isEmpty,
+  emptyMessage = 'No hay resultados.',
+  loadingMessage = 'Cargando…',
+  onRetry,
+  children,
+}: Props) {
   if (isLoading) {
     return (
       <div role="status" className="rounded border border-slate-200 bg-white p-6 text-center text-slate-500">
-        Cargando…
+        {loadingMessage}
       </div>
     )
   }

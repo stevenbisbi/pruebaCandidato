@@ -18,3 +18,14 @@ export function formatCop(value: string | null | undefined): string {
   const decimals = decimalPart.padEnd(2, '0')
   return `${sign}$ ${integer},${decimals}`
 }
+
+/**
+ * Ajuste por redondeo al saldar una factura (A-02): positivo si se condonaron centavos, negativo si
+ * se pago de mas. Un ajuste en cero no aporta nada en una tabla, asi que se muestra como guion.
+ */
+export function formatAdjustment(value: string | null | undefined): string {
+  if (value === null || value === undefined || /^-?0+(\.0+)?$/.test(value.trim())) {
+    return '—'
+  }
+  return formatCop(value)
+}
